@@ -9,9 +9,15 @@ import {
 } from "@spottoyt/ui/components/card";
 import { Music2, Radio, RotateCcw } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
+import {
+  getAccountStatus,
+  getSpotifyLoginUrl,
+  getSpotifyPlaylists,
+} from "../lib/apiClient";
 
 const stages = ["Setup", "Choose playlist", "Review", "Confirm", "Create"];
 const activeStageByMode = {
@@ -24,6 +30,17 @@ type ConvertMode = keyof typeof activeStageByMode;
 export function ConvertPage() {
   const [mode, setMode] = useState<ConvertMode>("choose");
   const activeStage = activeStageByMode[mode];
+  const accountStatus = useQuery({
+    queryKey: ["auth-status"],
+    queryFn: getAccountStatus,
+  });
+  const spotify = accountStatus.data?.spotify;
+  const spotifyConnected = Boolean(spotify?.connected);
+  const spotifyPlaylists = useQuery({
+    queryKey: ["spotify-playlists"],
+    queryFn: getSpotifyPlaylists,
+    enabled: spotifyConnected,
+  });
 
   return (
     <section className="flex flex-col gap-6">
@@ -53,7 +70,19 @@ export function ConvertPage() {
             <AccountConnectionCard
               Icon={Music2}
               name="Spotify"
-              status="not-connected"
+              status={spotifyConnected ? "connected" : "not-connected"}
+              actionLabel={spotifyConnected ? "Connected" : "Connect"}
+              detail={
+                spotifyConnected
+                  ? `Signed in${spotify?.displayName ? ` as ${spotify.displayName}` : ""}.`
+                  : spotify?.configured === false
+                    ? "Add Spotify credentials to the API .env file."
+                    : "Connect with your local Spotify app credentials."
+              }
+              disabled={spotifyConnected || spotify?.configured === false}
+              onAction={() => {
+                window.location.assign(getSpotifyLoginUrl());
+              }}
             />
             <AccountConnectionCard
               Icon={Radio}
@@ -72,7 +101,12 @@ export function ConvertPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <PlaylistImportPanel onImport={() => setMode("review")} />
+              <PlaylistImportPanel
+                onImport={() => setMode("review")}
+                playlists={spotifyPlaylists.data?.playlists}
+                playlistsLoading={spotifyPlaylists.isLoading}
+                showPlaylistPicker={spotifyConnected}
+              />
             </CardContent>
           </Card>
         </>

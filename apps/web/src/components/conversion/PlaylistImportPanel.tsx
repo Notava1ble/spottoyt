@@ -8,34 +8,52 @@ import {
 import { Input } from "@spottoyt/ui/components/input";
 import { ListMusic, Search } from "lucide-react";
 import { shellConversion } from "../../lib/mockData";
+import { SpotifyPlaylistPicker } from "./SpotifyPlaylistPicker";
+import type { SpotifyPlaylistSummary } from "@spottoyt/shared";
 
 type PlaylistImportPanelProps = {
   onImport?: () => void;
+  playlists?: SpotifyPlaylistSummary[];
+  playlistsLoading?: boolean;
+  showPlaylistPicker?: boolean;
 };
 
-export function PlaylistImportPanel({ onImport }: PlaylistImportPanelProps) {
+export function PlaylistImportPanel({
+  onImport,
+  playlists = [],
+  playlistsLoading,
+  showPlaylistPicker,
+}: PlaylistImportPanelProps) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Spotify Playlist</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <label className="flex flex-col gap-2" htmlFor="playlist-url">
-            <span className="text-sm font-medium text-foreground">
-              Playlist URL
-            </span>
-            <Input
-              id="playlist-url"
-              defaultValue="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
-            />
-          </label>
-          <Button onClick={onImport} type="button">
-            <Search data-icon="inline-start" aria-hidden="true" />
-            Import mock playlist
-          </Button>
-        </CardContent>
-      </Card>
+    <div className="grid gap-5">
+      {showPlaylistPicker ? (
+        <SpotifyPlaylistPicker
+          isLoading={playlistsLoading}
+          onImport={onImport}
+          playlists={playlists}
+        />
+      ) : null}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Spotify Playlist</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <label className="flex flex-col gap-2" htmlFor="playlist-url">
+              <span className="text-sm font-medium text-foreground">
+                Playlist URL
+              </span>
+              <Input
+                id="playlist-url"
+                defaultValue="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+              />
+            </label>
+            <Button onClick={onImport} type="button">
+              <Search data-icon="inline-start" aria-hidden="true" />
+              Import mock playlist
+            </Button>
+          </CardContent>
+        </Card>
       <Card>
         <CardHeader>
           <CardTitle>Preview</CardTitle>
@@ -56,6 +74,7 @@ export function PlaylistImportPanel({ onImport }: PlaylistImportPanelProps) {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
