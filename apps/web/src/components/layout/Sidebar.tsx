@@ -48,7 +48,7 @@ export function Sidebar() {
                   aria-current={pathname === to ? "page" : undefined}
                 >
                   <NavLink to={to}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <Icon aria-hidden="true" />
                     <span>{label}</span>
                   </NavLink>
                 </SidebarMenuButton>

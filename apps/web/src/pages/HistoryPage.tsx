@@ -9,7 +9,7 @@ import { conversionHistory } from "../lib/mockData";
 
 export function HistoryPage() {
   return (
-    <section className="space-y-6">
+    <section className="flex flex-col gap-6">
       <div>
         <h1 className="font-semibold text-3xl text-stone-50">History</h1>
         <p className="mt-2 max-w-2xl text-stone-400">
@@ -19,7 +19,7 @@ export function HistoryPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {conversionHistory.map((item) => (
           <Card key={item.id}>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex-row items-center justify-between gap-4">
               <CardTitle>{item.name}</CardTitle>
               <Badge tone="success">
                 {item.reviewed}/{item.tracks}

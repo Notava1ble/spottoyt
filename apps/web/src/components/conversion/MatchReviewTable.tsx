@@ -49,17 +49,17 @@ export function MatchReviewTable() {
                   variant="secondary"
                   aria-label="Accept match"
                 >
-                  <Check className="h-4 w-4" aria-hidden="true" />
+                  <Check data-icon="inline-start" aria-hidden="true" />
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
                   aria-label="Search replacement"
                 >
-                  <Search className="h-4 w-4" aria-hidden="true" />
+                  <Search data-icon="inline-start" aria-hidden="true" />
                 </Button>
                 <Button size="icon" variant="ghost" aria-label="Skip track">
-                  <CircleSlash className="h-4 w-4" aria-hidden="true" />
+                  <CircleSlash data-icon="inline-start" aria-hidden="true" />
                 </Button>
               </div>
             </div>

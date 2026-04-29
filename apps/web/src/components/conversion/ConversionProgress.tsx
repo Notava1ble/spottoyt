@@ -16,7 +16,7 @@ export function ConversionProgress() {
       <CardHeader>
         <CardTitle>Create Playlist</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="flex flex-col gap-5">
         <Progress value={75} />
         <div className="grid gap-3">
           {steps.map((step) => (
@@ -27,12 +27,12 @@ export function ConversionProgress() {
               <span className="text-stone-200">{step.label}</span>
               {step.done ? (
                 <CheckCircle2
-                  className="h-5 w-5 text-emerald-300"
+                  className="size-5 text-emerald-300"
                   aria-hidden="true"
                 />
               ) : (
                 <CircleDotDashed
-                  className="h-5 w-5 text-amber-300"
+                  className="size-5 text-amber-300"
                   aria-hidden="true"
                 />
               )}

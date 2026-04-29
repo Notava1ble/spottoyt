@@ -11,8 +11,8 @@ export function PlaylistImportPanel() {
         <CardHeader>
           <CardTitle>Spotify Playlist</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <label className="block space-y-2">
+        <CardContent className="flex flex-col gap-4">
+          <label className="flex flex-col gap-2">
             <span className="text-sm font-medium text-stone-300">
               Playlist URL
             </span>
@@ -23,7 +23,7 @@ export function PlaylistImportPanel() {
           </label>
           <Button asChild>
             <Link to="/review">
-              <Search className="h-4 w-4" aria-hidden="true" />
+              <Search data-icon="inline-start" aria-hidden="true" />
               Import mock playlist
             </Link>
           </Button>
@@ -33,10 +33,10 @@ export function PlaylistImportPanel() {
         <CardHeader>
           <CardTitle>Preview</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-emerald-400 text-stone-950">
-              <ListMusic className="h-5 w-5" aria-hidden="true" />
+            <div className="flex size-11 items-center justify-center rounded-md bg-emerald-400 text-stone-950">
+              <ListMusic className="size-5" aria-hidden="true" />
             </div>
             <div>
               <p className="font-medium text-stone-100">

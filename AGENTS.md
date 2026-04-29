@@ -11,6 +11,7 @@ SpottoYT is a local-first app for converting Spotify playlists into reviewed You
 - Push back when a requested change would create fragile architecture, expose credentials, add unnecessary tooling, or hide a refactor that should be explicit.
 - Commit after each reasonable verified milestone without asking first.
 - Use concise typed commit messages such as `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, or `test:`.
+- Right-size verification: for small changes, prefer focused checks such as linting, typechecking, or targeted tests when useful; reserve full test/build/browser sweeps for larger refactors or risky behavior changes.
 - In the final response, state that you committed and include the exact commit message.
 - If you start a dev server, API server, web server, watcher, or other long-running process, stop the process before your final response unless the user explicitly asks you to leave it running.
 - Do not stop a server the user started. Only clean up processes you launched.

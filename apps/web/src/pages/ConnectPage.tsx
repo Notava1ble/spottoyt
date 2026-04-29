@@ -3,7 +3,7 @@ import { AccountConnectionCard } from "../components/auth/AccountConnectionCard"
 
 export function ConnectPage() {
   return (
-    <section className="space-y-6">
+    <section className="flex flex-col gap-6">
       <div>
         <h1 className="font-semibold text-3xl text-stone-50">
           Connect Accounts
