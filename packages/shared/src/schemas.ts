@@ -5,8 +5,10 @@ export const providerSchema = z.enum(["spotify", "youtubeMusic"]);
 export const connectionStatusSchema = z.object({
   provider: providerSchema,
   connected: z.boolean(),
+  configured: z.boolean().optional(),
   displayName: z.string().optional(),
   expiresAt: z.string().datetime().optional(),
+  error: z.string().optional(),
 });
 
 export const accountStatusResponseSchema = z.object({
@@ -33,6 +35,21 @@ export const spotifyTrackSchema = z.object({
   durationMs: z.number().int().positive(),
   isrc: z.string().optional(),
   explicit: z.boolean(),
+});
+
+export const spotifyPlaylistSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  trackCount: z.number().int().nonnegative(),
+  public: z.boolean().nullable(),
+  collaborative: z.boolean(),
+  ownerName: z.string().optional(),
+  externalUrl: z.string().url().optional(),
+  imageUrl: z.string().url().optional(),
+});
+
+export const spotifyPlaylistsResponseSchema = z.object({
+  playlists: z.array(spotifyPlaylistSummarySchema),
 });
 
 export const ytmusicCandidateSchema = z.object({
