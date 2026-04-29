@@ -3,6 +3,7 @@ import {
   accountStatusResponseSchema,
   conversionJobSchema,
   mockConversionJob,
+  spicetifyPlaylistSnapshotSchema,
   spotifyPlaylistsResponseSchema,
   spotifyPlaylistUrlSchema,
 } from "./schemas";
@@ -59,5 +60,29 @@ describe("shared schemas", () => {
 
     expect(parsed.playlists).toHaveLength(1);
     expect(parsed.playlists[0]?.trackCount).toBe(42);
+  });
+
+  it("parses Spicetify playlist snapshots from the desktop bridge", () => {
+    const parsed = spicetifyPlaylistSnapshotSchema.parse({
+      source: "spicetify",
+      spotifyPlaylistUri: "spotify:playlist:playlist-1",
+      playlistName: "Road trip",
+      snapshotAt: "2026-04-30T12:00:00.000Z",
+      tracks: [
+        {
+          spotifyUri: "spotify:track:track-1",
+          title: "Midnight City",
+          artists: ["M83"],
+          album: "Hurry Up, We're Dreaming",
+          durationMs: 243000,
+          isrc: "FR6V81141061",
+          explicit: false,
+          position: 1,
+        },
+      ],
+    });
+
+    expect(parsed.tracks[0]?.spotifyUri).toBe("spotify:track:track-1");
+    expect(parsed.tracks[0]?.position).toBe(1);
   });
 });

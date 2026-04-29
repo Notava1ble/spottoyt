@@ -1,3 +1,4 @@
+import type { ConversionJob } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
 import {
@@ -7,16 +8,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@spottoyt/ui/components/card";
-import { useQuery } from "@tanstack/react-query";
-import { Music2, Radio, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Cable, Radio, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
 import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
 import {
   getAccountStatus,
-  getSpotifyLoginUrl,
-  getSpotifyPlaylists,
+  getEventsUrl,
+  getLatestImport,
 } from "../lib/apiClient";
 
 const stages = ["Setup", "Choose playlist", "Review", "Confirm", "Create"];
@@ -29,18 +30,41 @@ type ConvertMode = keyof typeof activeStageByMode;
 
 export function ConvertPage() {
   const [mode, setMode] = useState<ConvertMode>("choose");
+  const [liveConversion, setLiveConversion] = useState<ConversionJob | null>(
+    null,
+  );
+  const queryClient = useQueryClient();
   const activeStage = activeStageByMode[mode];
   const accountStatus = useQuery({
     queryKey: ["auth-status"],
     queryFn: getAccountStatus,
   });
-  const spotify = accountStatus.data?.spotify;
-  const spotifyConnected = Boolean(spotify?.connected);
-  const spotifyPlaylists = useQuery({
-    queryKey: ["spotify-playlists"],
-    queryFn: getSpotifyPlaylists,
-    enabled: spotifyConnected,
+  const youtubeMusic = accountStatus.data?.youtubeMusic;
+  const latestImport = useQuery({
+    queryKey: ["imports-latest"],
+    queryFn: getLatestImport,
   });
+  const latestConversion =
+    liveConversion ?? latestImport.data?.conversion ?? null;
+
+  useEffect(() => {
+    if (!("EventSource" in window)) {
+      return;
+    }
+
+    const events = new EventSource(getEventsUrl());
+    events.addEventListener("spicetify-imported", () => {
+      void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
+      void getLatestImport().then((response) => {
+        setLiveConversion(response.conversion);
+      });
+      setMode("review");
+    });
+
+    return () => {
+      events.close();
+    };
+  }, [queryClient]);
 
   return (
     <section className="flex flex-col gap-6">
@@ -68,26 +92,21 @@ export function ConvertPage() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <AccountConnectionCard
-              Icon={Music2}
-              name="Spotify"
-              status={spotifyConnected ? "connected" : "not-connected"}
-              actionLabel={spotifyConnected ? "Connected" : "Connect"}
+              Icon={Cable}
+              name="Spotify Desktop"
+              status={latestConversion ? "connected" : "not-connected"}
+              actionLabel="Waiting"
               detail={
-                spotifyConnected
-                  ? `Signed in${spotify?.displayName ? ` as ${spotify.displayName}` : ""}.`
-                  : spotify?.configured === false
-                    ? "Add Spotify credentials to the API .env file."
-                    : "Connect with your local Spotify app credentials."
+                latestConversion
+                  ? `${latestConversion.sourcePlaylistName} is ready for review.`
+                  : "Waiting for Spotify desktop. Use the Spicetify button to send the current playlist here."
               }
-              disabled={spotifyConnected || spotify?.configured === false}
-              onAction={() => {
-                window.location.assign(getSpotifyLoginUrl());
-              }}
+              disabled
             />
             <AccountConnectionCard
               Icon={Radio}
               name="YouTube Music"
-              status="not-connected"
+              status={youtubeMusic?.connected ? "connected" : "not-connected"}
             />
           </div>
 
@@ -95,17 +114,14 @@ export function ConvertPage() {
             <CardHeader>
               <CardTitle>Choose playlist</CardTitle>
               <CardDescription>
-                Paste a Spotify playlist link now. Authenticated playlist
-                picking can sit beside this once the Spotify connection is
-                wired.
+                Use the Spicetify extension inside Spotify desktop to push the
+                current playlist into SpottoYT.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <PlaylistImportPanel
                 onImport={() => setMode("review")}
-                playlists={spotifyPlaylists.data?.playlists}
-                playlistsLoading={spotifyPlaylists.isLoading}
-                showPlaylistPicker={spotifyConnected}
+                latestConversion={latestConversion}
               />
             </CardContent>
           </Card>
@@ -117,9 +133,17 @@ export function ConvertPage() {
               <h2 className="font-semibold text-2xl text-foreground">
                 Matching Review
               </h2>
+              {latestConversion ? (
+                <p className="mt-1 font-medium text-foreground">
+                  {latestConversion.sourcePlaylistName}
+                </p>
+              ) : null}
               <p className="mt-2 max-w-2xl text-muted-foreground">
-                Review proposed YouTube Music matches before creating the
-                playlist. Reset if the source playlist needs to change.
+                {latestConversion
+                  ? `Reviewing ${latestConversion.sourcePlaylistName}: ${latestConversion.tracks.length} ${
+                      latestConversion.tracks.length === 1 ? "track" : "tracks"
+                    } from Spicetify.`
+                  : "Review proposed YouTube Music matches before creating the playlist. Reset if the source playlist needs to change."}
               </p>
             </div>
             <Button
@@ -131,7 +155,7 @@ export function ConvertPage() {
               Reset conversion
             </Button>
           </div>
-          <MatchReviewTable />
+          <MatchReviewTable conversion={latestConversion} />
         </section>
       )}
     </section>

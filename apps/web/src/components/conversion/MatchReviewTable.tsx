@@ -1,3 +1,4 @@
+import type { ConversionJob } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
 import { Card } from "@spottoyt/ui/components/card";
@@ -5,7 +6,13 @@ import { Check, CircleSlash, Search } from "lucide-react";
 import { formatConfidence, formatDuration } from "../../lib/formatters";
 import { shellConversion } from "../../lib/mockData";
 
-export function MatchReviewTable() {
+type MatchReviewTableProps = {
+  conversion?: ConversionJob | null;
+};
+
+export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
+  const activeConversion = conversion ?? shellConversion;
+
   return (
     <Card className="overflow-hidden">
       <div className="grid min-w-[760px] grid-cols-[1.4fr_1.4fr_8rem_12rem] border-b px-5 py-3 text-muted-foreground text-xs uppercase tracking-wide">
@@ -15,8 +22,8 @@ export function MatchReviewTable() {
         <span className="text-right">Decision</span>
       </div>
       <div className="overflow-x-auto">
-        {shellConversion.matches.map((match) => {
-          const track = shellConversion.tracks.find(
+        {activeConversion.matches.map((match) => {
+          const track = activeConversion.tracks.find(
             (item) => item.id === match.trackId,
           );
           const variant = match.confidence > 0.9 ? "default" : "secondary";

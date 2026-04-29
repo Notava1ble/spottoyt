@@ -52,6 +52,25 @@ export const spotifyPlaylistsResponseSchema = z.object({
   playlists: z.array(spotifyPlaylistSummarySchema),
 });
 
+export const spicetifyPlaylistTrackSchema = z.object({
+  spotifyUri: z.string().min(1),
+  title: z.string().min(1),
+  artists: z.array(z.string().min(1)).min(1),
+  album: z.string().min(1).optional(),
+  durationMs: z.number().int().positive(),
+  isrc: z.string().min(1).optional(),
+  explicit: z.boolean().optional(),
+  position: z.number().int().nonnegative(),
+});
+
+export const spicetifyPlaylistSnapshotSchema = z.object({
+  source: z.literal("spicetify"),
+  spotifyPlaylistUri: z.string().min(1),
+  playlistName: z.string().min(1),
+  snapshotAt: z.string().datetime(),
+  tracks: z.array(spicetifyPlaylistTrackSchema).min(1),
+});
+
 export const ytmusicCandidateSchema = z.object({
   videoId: z.string(),
   title: z.string(),
@@ -84,6 +103,20 @@ export const conversionJobSchema = z.object({
   updatedAt: z.string().datetime(),
   tracks: z.array(spotifyTrackSchema),
   matches: z.array(matchDecisionSchema),
+});
+
+export const latestImportResponseSchema = z.object({
+  conversion: conversionJobSchema.nullable(),
+});
+
+export const spicetifyImportResponseSchema = z.object({
+  ok: z.literal(true),
+  conversion: conversionJobSchema,
+});
+
+export const importEventSchema = z.object({
+  type: z.literal("spicetify-imported"),
+  conversionId: z.string(),
 });
 
 export const mockConversionJob = {

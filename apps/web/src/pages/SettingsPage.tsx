@@ -5,23 +5,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@spottoyt/ui/components/card";
-import { useQuery } from "@tanstack/react-query";
-import { getAccountStatus } from "../lib/apiClient";
 
 const settings = [
-  ["Spotify redirect", "http://127.0.0.1:4317/auth/spotify/callback"],
+  ["Spicetify API target", "http://127.0.0.1:4317/imports/spicetify"],
+  ["Spicetify events", "http://127.0.0.1:4317/events"],
   ["SQLite database", "./data/spottoyt.sqlite"],
   ["YouTube Music auth", "./auth/ytmusic-oauth.json"],
 ];
 
 export function SettingsPage() {
-  const accountStatus = useQuery({
-    queryKey: ["auth-status"],
-    queryFn: getAccountStatus,
-  });
-  const spotify = accountStatus.data?.spotify;
-  const spotifyReady = Boolean(spotify?.configured);
-
   return (
     <section className="flex flex-col gap-6">
       <div>
@@ -39,15 +31,11 @@ export function SettingsPage() {
           <div className="flex flex-col gap-2 rounded-lg bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="text-muted-foreground text-sm">
-                Spotify credentials
+                Spotify import
               </span>
-              <p className="font-medium text-foreground">
-                {spotifyReady ? "Configured" : "Missing"}
-              </p>
+              <p className="font-medium text-foreground">Spicetify bridge</p>
             </div>
-            <Badge variant={spotifyReady ? "default" : "secondary"}>
-              {spotifyReady ? "Ready" : "Needs .env"}
-            </Badge>
+            <Badge variant="secondary">Web API deprecated</Badge>
           </div>
           {settings.map(([label, value]) => (
             <div

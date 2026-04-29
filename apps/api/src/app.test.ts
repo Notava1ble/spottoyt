@@ -263,4 +263,73 @@ describe("api shell", () => {
 
     await app.close();
   });
+
+  it("imports Spicetify playlist snapshots and exposes the latest import", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: {
+        source: "spicetify",
+        spotifyPlaylistUri: "spotify:playlist:playlist-1",
+        playlistName: "Road trip",
+        snapshotAt: "2026-04-30T12:00:00.000Z",
+        tracks: [
+          {
+            spotifyUri: "spotify:track:track-1",
+            title: "Midnight City",
+            artists: ["M83"],
+            album: "Hurry Up, We're Dreaming",
+            durationMs: 243000,
+            isrc: "FR6V81141061",
+            explicit: false,
+            position: 1,
+          },
+        ],
+      },
+    });
+    const latest = await app.inject({
+      method: "GET",
+      url: "/imports/latest",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().conversion.sourcePlaylistName).toBe("Road trip");
+    expect(response.json().conversion.tracks).toEqual([
+      {
+        id: "spotify:track:track-1",
+        title: "Midnight City",
+        artists: ["M83"],
+        album: "Hurry Up, We're Dreaming",
+        durationMs: 243000,
+        isrc: "FR6V81141061",
+        explicit: false,
+      },
+    ]);
+    expect(latest.statusCode).toBe(200);
+    expect(latest.json().conversion.id).toBe(response.json().conversion.id);
+
+    await app.close();
+  });
+
+  it("rejects invalid Spicetify playlist snapshots", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: {
+        source: "spicetify",
+        playlistName: "Broken",
+        tracks: [],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+
+    await app.close();
+  });
 });

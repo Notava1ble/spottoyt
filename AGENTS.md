@@ -25,8 +25,10 @@ SpottoYT is a local-first app for converting Spotify playlists into reviewed You
 - UI code lives in `apps/web`.
 - Shared shadcn primitives and Tailwind theme tokens live in `packages/ui`.
 - Fastify API code lives in `apps/api`.
+- The Spicetify desktop bridge lives in `apps/spicetify-extension` and should only push playlist metadata to `apps/api`.
 - Shared request/response contracts live in `packages/shared`.
 - YouTube Music access must go through `apps/ytmusic-worker` or `YtmusicService`; do not call it from React.
+- Spotify Web API OAuth is deprecated for now; prefer Spicetify-pushed snapshots and keep any remaining Web API code compatibility-only.
 - Prefer small service boundaries over direct cross-layer imports.
 
 ## Commands

@@ -16,12 +16,14 @@ The preferred top-level navigation is:
 
 Convert is the main workspace for starting a new Spotify to YouTube Music conversion.
 
-The page should first check whether Spotify and YouTube Music access are ready. If one is missing, show a setup gate or compact account prompts. If both are ready, let the user choose a Spotify playlist.
+The page should first check whether Spotify desktop bridge input and YouTube Music access are ready. If one is missing, show a setup gate or compact account prompts. Spotify Web API OAuth is deprecated for now because Development Mode access requires Premium ownership.
 
-Playlist selection may support both:
+Playlist selection should primarily support:
 
-- pasting a Spotify playlist URL
-- choosing from playlists fetched through Spotify authentication
+- pushing the currently open Spotify desktop playlist through the Spicetify extension
+- later, importing Spotify export files or CSV/TSV snapshots
+
+Playlist selection may keep Spotify Web API routes as compatibility-only backend code, but the main UI should not rely on authenticated Spotify playlist picking.
 
 After a playlist is chosen, the flow can move linearly through a small number of stages such as selecting/importing, reviewing matches, confirming, creating, and completion. The user does not need free navigation between all stages. If they want to change the source playlist or restart the process, a reset action is enough.
 
@@ -48,7 +50,7 @@ The rough goal is incremental updates: if the original Spotify playlist changes,
 
 ## YouTube Sync
 
-Refreshing from YouTube Music is useful but secondary. The default workflow can rely on the local snapshot and Spotify refreshes first.
+Refreshing from YouTube Music is useful but secondary. The default workflow can rely on the local snapshot and Spicetify-pushed Spotify refreshes first.
 
 Later, an explicit sync action in Library may compare the stored YouTube playlist state with the real YouTube Music playlist. This could let the app notice that a user manually removed a converted song on YouTube and update the local state so the song can be re-imported if desired.
 
@@ -56,4 +58,4 @@ Do not make this a required part of the normal conversion path until the rest of
 
 ## Settings
 
-Settings owns authentication and local configuration. This includes Spotify auth, YouTube Music auth/configuration, local database paths, and future matching or sync preferences.
+Settings owns authentication and local configuration. This includes Spicetify extension endpoints, deprecated Spotify Web API notes, YouTube Music auth/configuration, local database paths, and future matching or sync preferences.

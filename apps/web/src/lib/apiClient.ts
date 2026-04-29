@@ -1,5 +1,6 @@
 import type {
   AccountStatusResponse,
+  LatestImportResponse,
   SpotifyPlaylistsResponse,
 } from "@spottoyt/shared";
 
@@ -33,6 +34,14 @@ export function getAccountStatus() {
 
 export function getSpotifyPlaylists() {
   return apiGet<SpotifyPlaylistsResponse>("/spotify/playlists");
+}
+
+export function getLatestImport() {
+  return apiGet<LatestImportResponse>("/imports/latest");
+}
+
+export function getEventsUrl() {
+  return `${apiUrl}/events`;
 }
 
 export function getSpotifyLoginUrl() {

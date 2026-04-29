@@ -1,87 +1,53 @@
-import type { SpotifyPlaylistSummary } from "@spottoyt/shared";
+import type { ConversionJob } from "@spottoyt/shared";
 import { Button } from "@spottoyt/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@spottoyt/ui/components/card";
-import { Input } from "@spottoyt/ui/components/input";
-import { ListMusic, Search } from "lucide-react";
-import { shellConversion } from "../../lib/mockData";
-import { SpotifyPlaylistPicker } from "./SpotifyPlaylistPicker";
+import { Cable, ListMusic } from "lucide-react";
 
 type PlaylistImportPanelProps = {
+  latestConversion?: ConversionJob | null;
   onImport?: () => void;
-  playlists?: SpotifyPlaylistSummary[];
-  playlistsLoading?: boolean;
-  showPlaylistPicker?: boolean;
 };
 
 export function PlaylistImportPanel({
+  latestConversion,
   onImport,
-  playlists = [],
-  playlistsLoading,
-  showPlaylistPicker,
 }: PlaylistImportPanelProps) {
+  const trackCount = latestConversion?.tracks.length ?? 0;
+
   return (
-    <div className="grid gap-5">
-      {showPlaylistPicker ? (
-        <SpotifyPlaylistPicker
-          isLoading={playlistsLoading}
-          onImport={onImport}
-          playlists={playlists}
-        />
-      ) : null}
-      <div
-        className={
-          showPlaylistPicker
-            ? "grid gap-5"
-            : "grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]"
-        }
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle>Spotify playlist link</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <label className="flex flex-col gap-2" htmlFor="playlist-url">
-              <span className="text-sm font-medium text-foreground">
-                Playlist URL
-              </span>
-              <Input
-                id="playlist-url"
-                defaultValue="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
-              />
-            </label>
-            <Button onClick={onImport} type="button">
-              <Search data-icon="inline-start" aria-hidden="true" />
-              Import playlist link
-            </Button>
-          </CardContent>
-        </Card>
-        {!showPlaylistPicker ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Demo preview</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <ListMusic aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">
-                    {shellConversion.sourcePlaylistName}
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    {shellConversion.tracks.length} demo tracks
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="flex flex-col gap-3 rounded-md border bg-background p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Cable aria-hidden="true" />
+          </div>
+          <div>
+            <p className="font-medium text-foreground">Spicetify bridge</p>
+            <p className="text-muted-foreground text-sm">
+              Open a Spotify playlist and press Send to SpottoYT.
+            </p>
+          </div>
+        </div>
+        <Button disabled={!latestConversion} onClick={onImport} type="button">
+          <ListMusic data-icon="inline-start" aria-hidden="true" />
+          Review latest import
+        </Button>
+      </div>
+      <div className="flex flex-col justify-center gap-3 rounded-md border bg-background p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <ListMusic aria-hidden="true" />
+          </div>
+          <div>
+            <p className="font-medium text-foreground">
+              {latestConversion?.sourcePlaylistName ?? "Waiting for import"}
+            </p>
+            <p className="text-muted-foreground text-sm">
+              {latestConversion
+                ? `${trackCount} ${trackCount === 1 ? "track" : "tracks"} from Spicetify`
+                : "Waiting for Spotify desktop"}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
