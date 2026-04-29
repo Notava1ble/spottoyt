@@ -77,7 +77,9 @@ describe("app shell", () => {
       "aria-current",
       "page",
     );
-    expect(screen.queryByRole("link", { name: /review/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /review/i }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("heading", { name: /convert/i }),
@@ -89,7 +91,9 @@ describe("app shell", () => {
       screen.getByRole("heading", { name: "YouTube Music" }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /import mock playlist/i }));
+    await user.click(
+      screen.getByRole("button", { name: /import playlist link/i }),
+    );
 
     expect(
       screen.getByRole("heading", { name: /matching review/i }),
@@ -101,7 +105,9 @@ describe("app shell", () => {
 
     await user.click(screen.getByRole("link", { name: /library/i }));
 
-    expect(screen.getByRole("heading", { name: /library/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /library/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/converted playlists and future maintenance/i),
     ).toBeInTheDocument();
@@ -118,9 +124,7 @@ describe("app shell", () => {
 
     render(<App initialEntries={["/settings"]} />);
 
-    expect(
-      await screen.findByText("Spotify credentials"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Spotify credentials")).toBeInTheDocument();
     expect(screen.getByText("Missing")).toBeInTheDocument();
     expect(
       screen.getByText("http://127.0.0.1:4317/auth/spotify/callback"),
@@ -134,6 +138,7 @@ describe("app shell", () => {
 
     expect(await screen.findByText("Road trip")).toBeInTheDocument();
     expect(screen.getByText("42 tracks")).toBeInTheDocument();
+    expect(screen.queryByText("Demo preview")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /use playlist road trip/i }),
