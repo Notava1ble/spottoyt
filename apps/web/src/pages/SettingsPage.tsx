@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@spottoyt/ui/components/badge";
 import {
   Card,
@@ -6,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@spottoyt/ui/components/card";
+import { useQuery } from "@tanstack/react-query";
 import { getAccountStatus } from "../lib/apiClient";
 
 const settings = [

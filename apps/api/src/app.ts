@@ -86,7 +86,10 @@ export function buildApp(options: FastifyServerOptions = {}) {
     }
 
     try {
-      await spotifyAuth.completeCallback(request.query.code, request.query.state);
+      await spotifyAuth.completeCallback(
+        request.query.code,
+        request.query.state,
+      );
       return reply.redirect(currentEnv.webUrl);
     } catch (error) {
       return handleSpotifyAuthError(error, reply);
@@ -160,9 +163,12 @@ export function buildApp(options: FastifyServerOptions = {}) {
   return app;
 }
 
-function handleSpotifyAuthError(error: unknown, reply: {
-  code: (statusCode: number) => void;
-}) {
+function handleSpotifyAuthError(
+  error: unknown,
+  reply: {
+    code: (statusCode: number) => void;
+  },
+) {
   if (error instanceof SpotifyAuthError) {
     reply.code(error.statusCode);
     return { error: error.message };

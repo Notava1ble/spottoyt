@@ -6,8 +6,8 @@ import {
   Routes,
 } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
-import { HistoryPage } from "../pages/HistoryPage";
 import { ConvertPage } from "../pages/ConvertPage";
+import { HistoryPage } from "../pages/HistoryPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { Providers } from "./providers";
 

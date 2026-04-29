@@ -1,8 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type {
   ConnectionStatus,
   SpotifyPlaylistSummary,
 } from "@spottoyt/shared";
-import { randomUUID } from "node:crypto";
 
 type SpotifyAuthConfig = {
   clientId: string;
@@ -177,23 +177,29 @@ export class SpotifyAuthService {
   }
 
   private async exchangeCode(code: string): Promise<SpotifyTokenResponse> {
-    const response = await this.fetcher("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${btoa(
-          `${this.config.clientId}:${this.config.clientSecret}`,
-        )}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+    const response = await this.fetcher(
+      "https://accounts.spotify.com/api/token",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${btoa(
+            `${this.config.clientId}:${this.config.clientSecret}`,
+          )}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: this.config.redirectUri,
+        }),
       },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: this.config.redirectUri,
-      }),
-    });
+    );
 
     if (!response.ok) {
-      await this.handleSpotifyError(response, "Unable to exchange Spotify code");
+      await this.handleSpotifyError(
+        response,
+        "Unable to exchange Spotify code",
+      );
     }
 
     return (await response.json()) as SpotifyTokenResponse;
@@ -219,7 +225,10 @@ export class SpotifyAuthService {
     });
 
     if (!response.ok) {
-      await this.handleSpotifyError(response, "Unable to fetch Spotify profile");
+      await this.handleSpotifyError(
+        response,
+        "Unable to fetch Spotify profile",
+      );
     }
 
     return (await response.json()) as SpotifyProfileResponse;
