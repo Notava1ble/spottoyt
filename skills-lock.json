@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "accelint-ts-testing": {
+      "source": "gohypergiant/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/accelint-ts-testing/SKILL.md",
+      "computedHash": "232d89e0b08a2a90c7006b3f3dad2da394507df1263d7849c51b9f9e94d7e058"
+    },
     "fastify-best-practices": {
       "source": "mcollina/skills",
       "sourceType": "github",
