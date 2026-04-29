@@ -46,6 +46,7 @@ bun run lint
 - Use badges and helper copy sparingly; keep labels short and reserve badges for meaningful status, state, or metadata.
 - Build app-first screens, not marketing pages.
 - Keep the converter dense, calm, and operational.
+- Current product direction favors top-level navigation for Convert, Library, and Settings instead of treating sequential conversion steps as peer sidebar destinations. See `docs/product-flow-notes.md`.
 
 ## Longer Workflows
 
