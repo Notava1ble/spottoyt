@@ -6,8 +6,17 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
-import { cn } from "../../lib/utils";
+import { NavLink, useLocation } from "react-router-dom";
+import {
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  Sidebar as SidebarRoot,
+} from "../ui/sidebar";
 
 const items = [
   { to: "/", label: "Connect", Icon: ShieldCheck },
@@ -19,31 +28,35 @@ const items = [
 ];
 
 export function Sidebar() {
+  const { pathname } = useLocation();
+
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-stone-800 border-r bg-stone-950 px-4 py-5">
-      <div className="mb-8">
+    <SidebarRoot aria-label="Primary navigation">
+      <SidebarHeader>
         <p className="font-semibold text-2xl text-stone-50">SpottoYT</p>
-        <p className="text-sm text-stone-500">Local converter shell</p>
-      </div>
-      <nav className="grid gap-1" aria-label="Primary">
-        {items.map(({ Icon, label, to }) => (
-          <NavLink
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
-                isActive
-                  ? "bg-stone-800 text-stone-50"
-                  : "text-stone-400 hover:bg-stone-900 hover:text-stone-100",
-              )
-            }
-            key={to}
-            to={to}
-          >
-            <Icon className="h-4 w-4" aria-hidden="true" />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+        <p className="text-sm text-stone-500">Playlist conversion</p>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Workflow</SidebarGroupLabel>
+          <SidebarMenu>
+            {items.map(({ Icon, label, to }) => (
+              <SidebarMenuItem key={to}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === to}
+                  aria-current={pathname === to ? "page" : undefined}
+                >
+                  <NavLink to={to}>
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <span>{label}</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+    </SidebarRoot>
   );
 }
