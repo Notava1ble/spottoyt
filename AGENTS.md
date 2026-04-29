@@ -37,6 +37,8 @@ bun run lint
 ## UI Rules
 
 - Use Tailwind, shadcn-style local components, Radix primitives, and lucide icons.
+- Prefer shadcn-style local components and Radix primitives over custom-built UI; extend existing components before creating new sidebar, navigation, dialog, form, or control primitives.
+- Do not use gradients for backgrounds, panels, cards, or decorative fills unless explicitly requested or they make clear product sense for the specific surface.
 - Build app-first screens, not marketing pages.
 - Keep the converter dense, calm, and operational.
 
