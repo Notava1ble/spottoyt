@@ -11,9 +11,10 @@ export function HistoryPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h1 className="font-semibold text-3xl text-foreground">History</h1>
+        <h1 className="font-semibold text-3xl text-foreground">Library</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Past conversions will become resumable once SQLite storage is wired.
+          Converted playlists and future maintenance live here. Refreshes can
+          compare Spotify changes against the local conversion snapshot.
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">

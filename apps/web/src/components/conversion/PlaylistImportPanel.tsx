@@ -7,10 +7,13 @@ import {
 } from "@spottoyt/ui/components/card";
 import { Input } from "@spottoyt/ui/components/input";
 import { ListMusic, Search } from "lucide-react";
-import { Link } from "react-router-dom";
 import { shellConversion } from "../../lib/mockData";
 
-export function PlaylistImportPanel() {
+type PlaylistImportPanelProps = {
+  onImport?: () => void;
+};
+
+export function PlaylistImportPanel({ onImport }: PlaylistImportPanelProps) {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <Card>
@@ -27,11 +30,9 @@ export function PlaylistImportPanel() {
               defaultValue="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
             />
           </label>
-          <Button asChild>
-            <Link to="/review">
-              <Search data-icon="inline-start" aria-hidden="true" />
-              Import mock playlist
-            </Link>
+          <Button onClick={onImport} type="button">
+            <Search data-icon="inline-start" aria-hidden="true" />
+            Import mock playlist
           </Button>
         </CardContent>
       </Card>

@@ -1,10 +1,13 @@
-import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  MemoryRouter,
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
-import { ConnectPage } from "../pages/ConnectPage";
-import { CreatePage } from "../pages/CreatePage";
 import { HistoryPage } from "../pages/HistoryPage";
-import { ImportPage } from "../pages/ImportPage";
-import { ReviewPage } from "../pages/ReviewPage";
+import { ConvertPage } from "../pages/ConvertPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { Providers } from "./providers";
 
@@ -16,12 +19,13 @@ function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<ConnectPage />} />
-        <Route path="import" element={<ImportPage />} />
-        <Route path="review" element={<ReviewPage />} />
-        <Route path="create" element={<CreatePage />} />
-        <Route path="history" element={<HistoryPage />} />
+        <Route index element={<ConvertPage />} />
+        <Route path="library" element={<HistoryPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="import" element={<Navigate to="/" replace />} />
+        <Route path="review" element={<Navigate to="/" replace />} />
+        <Route path="create" element={<Navigate to="/" replace />} />
+        <Route path="history" element={<Navigate to="/library" replace />} />
       </Route>
     </Routes>
   );
