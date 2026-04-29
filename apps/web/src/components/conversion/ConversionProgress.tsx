@@ -1,7 +1,12 @@
+import { Button } from "@spottoyt/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@spottoyt/ui/components/card";
+import { Progress } from "@spottoyt/ui/components/progress";
 import { CheckCircle2, CircleDotDashed } from "lucide-react";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { Progress } from "../ui/progress";
 
 const steps = [
   { label: "Spotify import", done: true },
@@ -21,18 +26,15 @@ export function ConversionProgress() {
         <div className="grid gap-3">
           {steps.map((step) => (
             <div
-              className="flex items-center justify-between rounded-md bg-stone-950 px-4 py-3"
+              className="flex items-center justify-between rounded-lg bg-background px-4 py-3"
               key={step.label}
             >
-              <span className="text-stone-200">{step.label}</span>
+              <span className="text-foreground">{step.label}</span>
               {step.done ? (
-                <CheckCircle2
-                  className="size-5 text-emerald-300"
-                  aria-hidden="true"
-                />
+                <CheckCircle2 className="text-primary" aria-hidden="true" />
               ) : (
                 <CircleDotDashed
-                  className="size-5 text-amber-300"
+                  className="text-muted-foreground"
                   aria-hidden="true"
                 />
               )}

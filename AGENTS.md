@@ -22,6 +22,7 @@ SpottoYT is a local-first app for converting Spotify playlists into reviewed You
 
 - Use Bun workspaces.
 - UI code lives in `apps/web`.
+- Shared shadcn primitives and Tailwind theme tokens live in `packages/ui`.
 - Fastify API code lives in `apps/api`.
 - Shared request/response contracts live in `packages/shared`.
 - YouTube Music access must go through `apps/ytmusic-worker` or `YtmusicService`; do not call it from React.

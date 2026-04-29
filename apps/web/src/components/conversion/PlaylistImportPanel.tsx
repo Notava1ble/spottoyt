@@ -1,8 +1,14 @@
+import { Button } from "@spottoyt/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@spottoyt/ui/components/card";
+import { Input } from "@spottoyt/ui/components/input";
 import { ListMusic, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { shellConversion } from "../../lib/mockData";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
 export function PlaylistImportPanel() {
   return (
@@ -12,12 +18,12 @@ export function PlaylistImportPanel() {
           <CardTitle>Spotify Playlist</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <label className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-stone-300">
+          <label className="flex flex-col gap-2" htmlFor="playlist-url">
+            <span className="text-sm font-medium text-foreground">
               Playlist URL
             </span>
-            <input
-              className="h-11 w-full rounded-md border border-stone-700 bg-stone-950 px-3 text-stone-100 outline-none focus:border-emerald-400"
+            <Input
+              id="playlist-url"
               defaultValue="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
             />
           </label>
@@ -35,14 +41,14 @@ export function PlaylistImportPanel() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-md bg-emerald-400 text-stone-950">
-              <ListMusic className="size-5" aria-hidden="true" />
+            <div className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <ListMusic aria-hidden="true" />
             </div>
             <div>
-              <p className="font-medium text-stone-100">
+              <p className="font-medium text-foreground">
                 {shellConversion.sourcePlaylistName}
               </p>
-              <p className="text-sm text-stone-400">
+              <p className="text-muted-foreground text-sm">
                 {shellConversion.tracks.length} demo tracks
               </p>
             </div>

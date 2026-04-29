@@ -5,10 +5,10 @@ export function ConnectPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h1 className="font-semibold text-3xl text-stone-50">
+        <h1 className="font-semibold text-3xl text-foreground">
           Connect Accounts
         </h1>
-        <p className="mt-2 max-w-2xl text-stone-400">
+        <p className="mt-2 max-w-2xl text-muted-foreground">
           Local OAuth and YouTube Music credentials will land here in the next
           integration pass.
         </p>

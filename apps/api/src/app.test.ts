@@ -45,4 +45,19 @@ describe("api shell", () => {
 
     await app.close();
   });
+
+  it("validates playlist import request bodies before parsing URLs", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/playlists/import",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+
+    await app.close();
+  });
 });

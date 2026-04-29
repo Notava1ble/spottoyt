@@ -12,6 +12,24 @@ type ImportPlaylistBody = {
   playlistUrl: string;
 };
 
+const importPlaylistBodySchema = {
+  type: "object",
+  required: ["playlistUrl"],
+  additionalProperties: false,
+  properties: {
+    playlistUrl: { type: "string", minLength: 1 },
+  },
+} as const;
+
+const conversionParamsSchema = {
+  type: "object",
+  required: ["id"],
+  additionalProperties: false,
+  properties: {
+    id: { type: "string", minLength: 1 },
+  },
+} as const;
+
 export function buildApp(options: FastifyServerOptions = {}) {
   const app = Fastify({
     logger: true,
@@ -46,9 +64,11 @@ export function buildApp(options: FastifyServerOptions = {}) {
     plannedTables,
   }));
 
-  app.post<{ Body: ImportPlaylistBody }>(
-    "/playlists/import",
-    async (request, reply) => {
+  app.post<{ Body: ImportPlaylistBody }>("/playlists/import", {
+    schema: {
+      body: importPlaylistBodySchema,
+    },
+    handler: async (request, reply) => {
       const parsedUrl = spotifyPlaylistUrlSchema.safeParse(
         request.body.playlistUrl,
       );
@@ -65,21 +85,28 @@ export function buildApp(options: FastifyServerOptions = {}) {
 
       return conversions.importPlaylist(parsedUrl.data);
     },
-  );
+  });
 
-  app.get<{ Params: { id: string } }>("/conversions/:id", async (request) =>
-    conversions.getConversion(request.params.id),
-  );
+  app.get<{ Params: { id: string } }>("/conversions/:id", {
+    schema: {
+      params: conversionParamsSchema,
+    },
+    handler: async (request) => conversions.getConversion(request.params.id),
+  });
 
-  app.post<{ Params: { id: string } }>(
-    "/conversions/:id/match",
-    async (request) => conversions.matchConversion(request.params.id),
-  );
+  app.post<{ Params: { id: string } }>("/conversions/:id/match", {
+    schema: {
+      params: conversionParamsSchema,
+    },
+    handler: async (request) => conversions.matchConversion(request.params.id),
+  });
 
-  app.post<{ Params: { id: string } }>(
-    "/conversions/:id/create",
-    async (request) => conversions.createPlaylist(request.params.id),
-  );
+  app.post<{ Params: { id: string } }>("/conversions/:id/create", {
+    schema: {
+      params: conversionParamsSchema,
+    },
+    handler: async (request) => conversions.createPlaylist(request.params.id),
+  });
 
   return app;
 }

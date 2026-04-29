@@ -3,7 +3,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from "../components/ui/card";
+} from "@spottoyt/ui/components/card";
 
 const settings = [
   ["Spotify redirect", "http://127.0.0.1:4317/auth/spotify/callback"],
@@ -15,8 +15,8 @@ export function SettingsPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h1 className="font-semibold text-3xl text-stone-50">Settings</h1>
-        <p className="mt-2 max-w-2xl text-stone-400">
+        <h1 className="font-semibold text-3xl text-foreground">Settings</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">
           Local paths and callback URLs stay explicit so credentials are easy to
           audit.
         </p>
@@ -28,13 +28,11 @@ export function SettingsPage() {
         <CardContent className="grid gap-3">
           {settings.map(([label, value]) => (
             <div
-              className="grid gap-1 rounded-md bg-stone-950 px-4 py-3"
+              className="grid gap-1 rounded-lg bg-background px-4 py-3"
               key={label}
             >
-              <span className="text-sm text-stone-500">{label}</span>
-              <code className="break-all text-emerald-200 text-sm">
-                {value}
-              </code>
+              <span className="text-muted-foreground text-sm">{label}</span>
+              <code className="break-all text-primary text-sm">{value}</code>
             </div>
           ))}
         </CardContent>

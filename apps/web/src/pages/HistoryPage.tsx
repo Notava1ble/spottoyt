@@ -1,18 +1,18 @@
-import { Badge } from "../components/ui/badge";
+import { Badge } from "@spottoyt/ui/components/badge";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "../components/ui/card";
+} from "@spottoyt/ui/components/card";
 import { conversionHistory } from "../lib/mockData";
 
 export function HistoryPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h1 className="font-semibold text-3xl text-stone-50">History</h1>
-        <p className="mt-2 max-w-2xl text-stone-400">
+        <h1 className="font-semibold text-3xl text-foreground">History</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">
           Past conversions will become resumable once SQLite storage is wired.
         </p>
       </div>
@@ -21,12 +21,12 @@ export function HistoryPage() {
           <Card key={item.id}>
             <CardHeader className="flex-row items-center justify-between gap-4">
               <CardTitle>{item.name}</CardTitle>
-              <Badge tone="success">
+              <Badge>
                 {item.reviewed}/{item.tracks}
               </Badge>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-stone-400">{item.createdAt}</p>
+              <p className="text-muted-foreground text-sm">{item.createdAt}</p>
             </CardContent>
           </Card>
         ))}

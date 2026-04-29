@@ -10,16 +10,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@radix-ui/react-slot": "^1.2.4",
     "@spottoyt/shared": "workspace:*",
+    "@spottoyt/ui": "workspace:*",
     "@tanstack/react-query": "^5.90.11",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
-    "tailwindcss": "^4.1.17",
-    "tailwind-merge": "^3.4.0"
+    "tailwindcss": "^4.1.17"
   }
 }

@@ -1,13 +1,4 @@
 import {
-  History,
-  ListPlus,
-  Music2,
-  RotateCw,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
-import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupLabel,
@@ -16,7 +7,16 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   Sidebar as SidebarRoot,
-} from "../ui/sidebar";
+} from "@spottoyt/ui/components/sidebar";
+import {
+  History,
+  ListPlus,
+  Music2,
+  RotateCw,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
 
 const items = [
   { to: "/", label: "Connect", Icon: ShieldCheck },
@@ -33,8 +33,10 @@ export function Sidebar() {
   return (
     <SidebarRoot aria-label="Primary navigation">
       <SidebarHeader>
-        <p className="font-semibold text-2xl text-stone-50">SpottoYT</p>
-        <p className="text-sm text-stone-500">Playlist conversion</p>
+        <p className="font-semibold text-2xl text-sidebar-foreground">
+          SpottoYT
+        </p>
+        <p className="text-muted-foreground text-sm">Playlist conversion</p>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

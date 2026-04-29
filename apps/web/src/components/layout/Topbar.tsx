@@ -1,11 +1,11 @@
 export function Topbar() {
   return (
-    <header className="flex h-16 items-center justify-between border-stone-800 border-b bg-stone-950/80 px-6 backdrop-blur">
+    <header className="flex h-16 items-center justify-between border-b bg-background/80 px-6 backdrop-blur">
       <div>
-        <p className="font-medium text-stone-100">Conversion workspace</p>
-        <p className="text-sm text-stone-500">Mock mode</p>
+        <p className="font-medium text-foreground">Conversion workspace</p>
+        <p className="text-muted-foreground text-sm">Mock mode</p>
       </div>
-      <p className="text-sm text-stone-500">Services offline</p>
+      <p className="text-muted-foreground text-sm">Services offline</p>
     </header>
   );
 }

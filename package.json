@@ -11,8 +11,9 @@
     "dev": "concurrently -k -n api,web -c cyan,magenta \"bun run dev:api\" \"bun run dev:web\"",
     "dev:api": "bun run --filter @spottoyt/api dev",
     "dev:web": "bun run --filter @spottoyt/web dev",
-    "typecheck": "bun run typecheck:shared && bun run typecheck:api && bun run typecheck:web",
+    "typecheck": "bun run typecheck:shared && bun run typecheck:ui && bun run typecheck:api && bun run typecheck:web",
     "typecheck:shared": "bun run --filter @spottoyt/shared typecheck",
+    "typecheck:ui": "bun run --filter @spottoyt/ui typecheck",
     "typecheck:api": "bun run --filter @spottoyt/api typecheck",
     "typecheck:web": "bun run --filter @spottoyt/web typecheck",
     "test": "bun run test:shared && bun run test:api && bun run test:web",
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.5",
     "@tailwindcss/vite": "^4.1.17",
+    "@types/node": "^24.10.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
