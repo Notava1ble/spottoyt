@@ -225,7 +225,10 @@ export class SpotifyAuthService {
     return (await response.json()) as SpotifyProfileResponse;
   }
 
-  private async handleSpotifyError(response: Response, fallback: string): never {
+  private async handleSpotifyError(
+    response: Response,
+    fallback: string,
+  ): Promise<never> {
     const details = await response.text();
     const message = details
       ? `${fallback}: Spotify returned ${response.status} ${details}`
