@@ -8,7 +8,8 @@ SpottoYT is a local-first app for converting Spotify playlists into reviewed You
 
 - Run `git status --short` before edits.
 - Protect user work: if target files contain uncommitted changes you did not make, ask before touching them.
-- Push back when a requested change would create fragile architecture, expose credentials, add unnecessary tooling, or hide a refactor that should be explicit.
+- This repository is a very early WIP: propose sweeping simplifications or refactors when they improve long-term maintainability instead of layering on complexity.
+- Push back when a requested change would create fragile architecture, expose credentials, add unnecessary tooling, or obscure a refactor that should be explicit.
 - Commit after each reasonable verified milestone without asking first.
 - Use concise typed commit messages such as `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, or `test:`.
 - Right-size verification: for small changes, prefer focused checks such as linting, typechecking, or targeted tests when useful; reserve full test/build/browser sweeps for larger refactors or risky behavior changes.
