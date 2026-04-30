@@ -10,7 +10,7 @@ local API.
 1. Start SpottoYT with `bun run dev`.
 2. Open Spotify desktop with Spicetify applied.
 3. Open a Spotify playlist.
-4. Press `Send to SpottoYT` in the Spotify top bar.
+4. Right-click the playlist and choose `Extract to SpottoYT`.
 5. The extension posts the playlist snapshot to
    `http://127.0.0.1:4317/imports/spicetify`.
 6. The web app listens to `http://127.0.0.1:4317/events` and moves to review

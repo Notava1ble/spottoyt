@@ -170,8 +170,9 @@ describe("app shell", () => {
       ),
     ).toBe(false);
     expect(
-      screen.getByText(/use the spicetify extension inside spotify desktop/i),
+      screen.getByText(/spotify web api playlist picking is deprecated/i),
     ).toBeInTheDocument();
+    expect(screen.getByText("Spotify Web API")).toBeInTheDocument();
   });
 
   it("updates Convert when Spicetify pushes a playlist snapshot", async () => {
@@ -191,6 +192,14 @@ describe("app shell", () => {
           album: "Hurry Up, We're Dreaming",
           durationMs: 243000,
           isrc: "FR6V81141061",
+          explicit: false,
+        },
+        {
+          id: "spotify:track:track-2",
+          title: "Outro",
+          artists: ["M83"],
+          album: "Hurry Up, We're Dreaming",
+          durationMs: 247000,
           explicit: false,
         },
       ],
@@ -236,7 +245,8 @@ describe("app shell", () => {
     });
 
     expect(await screen.findByText("Road trip")).toBeInTheDocument();
-    expect(screen.getByText(/1 track from Spicetify/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 tracks from Spicetify/i)).toBeInTheDocument();
     expect(screen.getAllByText("Midnight City").length).toBe(2);
+    expect(screen.getByText("Outro")).toBeInTheDocument();
   });
 });

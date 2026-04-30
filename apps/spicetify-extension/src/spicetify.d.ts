@@ -43,13 +43,5 @@ declare const Spicetify: {
       PLAYLIST_V2?: string;
     };
   };
-  Topbar?: {
-    Button: new (
-      label: string,
-      icon: string,
-      callback: () => void | Promise<void>,
-      disabled?: boolean,
-    ) => unknown;
-  };
   showNotification?: (message: string, isError?: boolean, ms?: number) => void;
 };

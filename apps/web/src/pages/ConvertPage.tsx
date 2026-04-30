@@ -72,8 +72,8 @@ export function ConvertPage() {
         <div>
           <h1 className="font-semibold text-3xl text-foreground">Convert</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            Start a new Spotify to YouTube Music conversion. Account readiness,
-            playlist selection, review, and creation live in one linear flow.
+            Import from Spotify desktop with the Spicetify context menu, review
+            every source track, then create the YouTube Music playlist.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -99,7 +99,7 @@ export function ConvertPage() {
               detail={
                 latestConversion
                   ? `${latestConversion.sourcePlaylistName} is ready for review.`
-                  : "Waiting for Spotify desktop. Use the Spicetify button to send the current playlist here."
+                  : "Waiting for Spotify desktop. Right-click a playlist and choose Extract to SpottoYT."
               }
               disabled
             />
@@ -115,7 +115,8 @@ export function ConvertPage() {
               <CardTitle>Choose playlist</CardTitle>
               <CardDescription>
                 Use the Spicetify extension inside Spotify desktop to push the
-                current playlist into SpottoYT.
+                selected playlist into SpottoYT. Spotify Web API playlist
+                picking is deprecated.
               </CardDescription>
             </CardHeader>
             <CardContent>

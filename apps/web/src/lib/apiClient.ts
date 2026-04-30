@@ -1,7 +1,6 @@
 import type {
   AccountStatusResponse,
   LatestImportResponse,
-  SpotifyPlaylistsResponse,
 } from "@spottoyt/shared";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4317";
@@ -30,10 +29,6 @@ export async function apiPost<T>(path: string): Promise<T> {
 
 export function getAccountStatus() {
   return apiGet<AccountStatusResponse>("/auth/status");
-}
-
-export function getSpotifyPlaylists() {
-  return apiGet<SpotifyPlaylistsResponse>("/spotify/playlists");
 }
 
 export function getLatestImport() {

@@ -1,6 +1,7 @@
 import type { ConversionJob } from "@spottoyt/shared";
+import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
-import { Cable, ListMusic } from "lucide-react";
+import { Cable, ListMusic, MousePointerClick } from "lucide-react";
 
 type PlaylistImportPanelProps = {
   latestConversion?: ConversionJob | null;
@@ -18,12 +19,15 @@ export function PlaylistImportPanel({
       <div className="flex flex-col gap-3 rounded-md border bg-background p-4">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-            <Cable aria-hidden="true" />
+            <MousePointerClick aria-hidden="true" />
           </div>
           <div>
-            <p className="font-medium text-foreground">Spicetify bridge</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium text-foreground">Spicetify bridge</p>
+              <Badge variant="secondary">Primary import</Badge>
+            </div>
             <p className="text-muted-foreground text-sm">
-              Open a Spotify playlist and press Send to SpottoYT.
+              Right-click a Spotify playlist and choose Extract to SpottoYT.
             </p>
           </div>
         </div>
@@ -48,6 +52,17 @@ export function PlaylistImportPanel({
             </p>
           </div>
         </div>
+      </div>
+      <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-4 lg:col-span-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Cable className="size-4 text-muted-foreground" aria-hidden="true" />
+          <p className="font-medium text-foreground">Spotify Web API</p>
+          <Badge variant="outline">Deprecated</Badge>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          OAuth playlist picking is compatibility-only for now. New imports come
+          from Spotify desktop through the local Spicetify context menu.
+        </p>
       </div>
     </div>
   );

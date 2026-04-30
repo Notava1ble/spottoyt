@@ -8,7 +8,6 @@ import {
 
 const DEFAULT_API_URL = "http://127.0.0.1:4317";
 const API_URL_STORAGE_KEY = "spottoyt-api-url";
-const SPOTIFY_PLAYLIST_PATH = /\/playlist\/([A-Za-z0-9]+)/;
 
 type SpotifyPlaylistResponse = {
   name?: string;
@@ -40,12 +39,6 @@ async function boot() {
       void boot();
     }, 300);
     return;
-  }
-
-  if (Spicetify.Topbar) {
-    new Spicetify.Topbar.Button("Send to SpottoYT", "download", () => {
-      void sendCurrentPlaylist();
-    });
   }
 
   registerPlaylistContextMenu();
@@ -89,31 +82,6 @@ function registerPlaylistContextMenu() {
     (uris) => shouldShowPlaylistExtract(uris, uriApi),
     "download",
   ).register();
-}
-
-async function sendCurrentPlaylist() {
-  try {
-    const playlistId = getCurrentPlaylistId();
-
-    if (!playlistId) {
-      notify("Open a Spotify playlist first", true);
-      return;
-    }
-
-    await sendPlaylist(playlistId);
-  } catch (error) {
-    notify(
-      error instanceof Error ? error.message : "SpottoYT sync failed",
-      true,
-    );
-  }
-}
-
-function getCurrentPlaylistId() {
-  const pathname =
-    Spicetify.Platform?.History?.location?.pathname ?? window.location.pathname;
-
-  return pathname.match(SPOTIFY_PLAYLIST_PATH)?.[1] ?? null;
 }
 
 async function sendPlaylist(playlistId: string) {
