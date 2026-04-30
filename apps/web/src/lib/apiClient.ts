@@ -2,6 +2,10 @@ import type {
   AccountStatusResponse,
   ConversionJob,
   LatestImportResponse,
+  MatchDecision,
+  MatchDecisionStatus,
+  MatchingSettingsPatch,
+  MatchingSettingsResponse,
 } from "@spottoyt/shared";
 import { logClientEvent } from "./logger";
 
@@ -13,6 +17,28 @@ export async function apiGet<T>(path: string): Promise<T> {
 
 export async function apiPost<T>(path: string): Promise<T> {
   return apiRequest<T>(path, { method: "POST" });
+}
+
+export async function apiPostJson<T>(
+  path: string,
+  body: unknown,
+): Promise<T> {
+  return apiRequest<T>(path, {
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+}
+
+export async function apiPatchJson<T>(
+  path: string,
+  body: unknown,
+): Promise<T> {
+  return apiRequest<T>(path, {
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+  });
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -65,6 +91,14 @@ export function getEventsUrl() {
   return `${apiUrl}/events`;
 }
 
+export function getMatchingSettings() {
+  return apiGet<MatchingSettingsResponse>("/settings/matching");
+}
+
+export function updateMatchingSettings(patch: MatchingSettingsPatch) {
+  return apiPatchJson<MatchingSettingsResponse>("/settings/matching", patch);
+}
+
 export function matchConversion(id: string) {
   return apiPost<{
     conversion: ConversionJob;
@@ -75,6 +109,41 @@ export function matchConversion(id: string) {
       total: number;
     };
   }>(`/conversions/${id}/match`);
+}
+
+export function updateMatchStatus(
+  conversionId: string,
+  trackId: string,
+  status: MatchDecisionStatus,
+) {
+  return apiPostJson<{
+    conversion: ConversionJob;
+    match: MatchDecision;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(
+    `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/status`,
+    { status },
+  );
+}
+
+export function searchTrackMatch(conversionId: string, trackId: string) {
+  return apiPost<{
+    conversion: ConversionJob;
+    match: MatchDecision;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(
+    `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/search`,
+  );
 }
 
 export function resetImport() {

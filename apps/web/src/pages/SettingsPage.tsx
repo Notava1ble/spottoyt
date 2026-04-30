@@ -1,9 +1,18 @@
 import {
   Card,
   CardContent,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@spottoyt/ui/components/card";
+import { Button } from "@spottoyt/ui/components/button";
+import { Input } from "@spottoyt/ui/components/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  getMatchingSettings,
+  updateMatchingSettings,
+} from "../lib/apiClient";
 
 const settings = [
   ["Spicetify API target", "http://127.0.0.1:4317/imports/spicetify"],
@@ -13,6 +22,37 @@ const settings = [
 ];
 
 export function SettingsPage() {
+  const queryClient = useQueryClient();
+  const matchingSettings = useQuery({
+    queryKey: ["matching-settings"],
+    queryFn: getMatchingSettings,
+  });
+  const [draft, setDraft] = useState({
+    autoAcceptThreshold: "",
+    includeVideos: true,
+    reviewThreshold: "",
+    searchLimit: "",
+  });
+  const saveMatchingSettings = useMutation({
+    mutationFn: () =>
+      updateMatchingSettings({
+        autoAcceptThreshold: percentToRatio(draft.autoAcceptThreshold),
+        includeVideos: draft.includeVideos,
+        reviewThreshold: percentToRatio(draft.reviewThreshold),
+        searchLimit: Number(draft.searchLimit),
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["matching-settings"], response);
+      setDraft(toDraft(response.settings));
+    },
+  });
+
+  useEffect(() => {
+    if (matchingSettings.data) {
+      setDraft(toDraft(matchingSettings.data.settings));
+    }
+  }, [matchingSettings.data]);
+
   return (
     <section className="flex flex-col gap-6">
       <div>
@@ -49,6 +89,131 @@ export function SettingsPage() {
           ))}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Matching</CardTitle>
+        </CardHeader>
+        {matchingSettings.data ? (
+          <>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-1" htmlFor="auto-accept-threshold">
+                <span className="font-medium text-foreground text-sm">
+                  Auto-accept
+                </span>
+                <Input
+                  id="auto-accept-threshold"
+                  inputMode="numeric"
+                  max={100}
+                  min={50}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      autoAcceptThreshold: event.target.value,
+                    }))
+                  }
+                  type="number"
+                  value={draft.autoAcceptThreshold}
+                />
+              </label>
+              <label className="grid gap-1" htmlFor="review-threshold">
+                <span className="font-medium text-foreground text-sm">
+                  Review floor
+                </span>
+                <Input
+                  id="review-threshold"
+                  inputMode="numeric"
+                  max={95}
+                  min={20}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      reviewThreshold: event.target.value,
+                    }))
+                  }
+                  type="number"
+                  value={draft.reviewThreshold}
+                />
+              </label>
+              <label className="grid gap-1" htmlFor="search-limit">
+                <span className="font-medium text-foreground text-sm">
+                  Search limit
+                </span>
+                <Input
+                  id="search-limit"
+                  inputMode="numeric"
+                  max={20}
+                  min={3}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      searchLimit: event.target.value,
+                    }))
+                  }
+                  type="number"
+                  value={draft.searchLimit}
+                />
+              </label>
+              <label
+                className="flex min-h-16 items-center gap-3 rounded-lg bg-background px-3 py-2"
+                htmlFor="include-videos"
+              >
+                <input
+                  checked={draft.includeVideos}
+                  className="size-4 accent-current"
+                  id="include-videos"
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      includeVideos: event.target.checked,
+                    }))
+                  }
+                  type="checkbox"
+                />
+                <span className="font-medium text-foreground text-sm">
+                  Include video results
+                </span>
+              </label>
+            </CardContent>
+            <CardFooter className="justify-between">
+              <span className="text-muted-foreground text-sm">
+                {saveMatchingSettings.isSuccess
+                  ? "Saved"
+                  : "Server-side settings"}
+              </span>
+              <Button
+                disabled={saveMatchingSettings.isPending}
+                onClick={() => saveMatchingSettings.mutate()}
+              >
+                Save matching settings
+              </Button>
+            </CardFooter>
+          </>
+        ) : (
+          <CardContent>
+            <p className="text-muted-foreground text-sm">
+              Loading matching settings
+            </p>
+          </CardContent>
+        )}
+      </Card>
     </section>
   );
+}
+
+function toDraft(settings: {
+  autoAcceptThreshold: number;
+  includeVideos: boolean;
+  reviewThreshold: number;
+  searchLimit: number;
+}) {
+  return {
+    autoAcceptThreshold: String(Math.round(settings.autoAcceptThreshold * 100)),
+    includeVideos: settings.includeVideos,
+    reviewThreshold: String(Math.round(settings.reviewThreshold * 100)),
+    searchLimit: String(settings.searchLimit),
+  };
+}
+
+function percentToRatio(value: string) {
+  return Number(value) / 100;
 }

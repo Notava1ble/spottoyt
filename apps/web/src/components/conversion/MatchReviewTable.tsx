@@ -2,19 +2,58 @@ import type { ConversionJob, MatchDecision } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
 import { Card } from "@spottoyt/ui/components/card";
+import { useMutation } from "@tanstack/react-query";
 import { Check, CircleSlash, Search } from "lucide-react";
 import { useEffect, useState } from "react";
+import { searchTrackMatch, updateMatchStatus } from "../../lib/apiClient";
 import { formatConfidence, formatDuration } from "../../lib/formatters";
 import { logClientEvent } from "../../lib/logger";
 
 type MatchReviewTableProps = {
   conversion?: ConversionJob | null;
+  onConversionChange?: (conversion: ConversionJob) => void;
 };
 
-export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
+export function MatchReviewTable({
+  conversion,
+  onConversionChange,
+}: MatchReviewTableProps) {
   const [matches, setMatches] = useState<MatchDecision[]>(
     () => conversion?.matches ?? [],
   );
+  const conversionId = conversion?.id ?? "";
+  const updateStatus = useMutation({
+    mutationFn: ({
+      status,
+      trackId,
+    }: {
+      status: MatchDecision["status"];
+      trackId: string;
+    }) => updateMatchStatus(conversionId, trackId, status),
+    onSuccess: (response) => {
+      setMatches(response.conversion.matches);
+      onConversionChange?.(response.conversion);
+    },
+    onError: (error) => {
+      logClientEvent("error", "web.decision.change.failed", {
+        conversionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
+  const searchMatch = useMutation({
+    mutationFn: (trackId: string) => searchTrackMatch(conversionId, trackId),
+    onSuccess: (response) => {
+      setMatches(response.conversion.matches);
+      onConversionChange?.(response.conversion);
+    },
+    onError: (error) => {
+      logClientEvent("error", "web.decision.search.failed", {
+        conversionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
 
   useEffect(() => {
     setMatches(conversion?.matches ?? []);
@@ -24,19 +63,21 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
     return null;
   }
 
-  const conversionId = conversion.id;
-
   function updateDecision(trackId: string, status: MatchDecision["status"]) {
     logClientEvent("info", "web.decision.changed", {
       conversionId,
       trackId,
       status,
     });
-    setMatches((current) =>
-      current.map((match) =>
-        match.trackId === trackId ? { ...match, status } : match,
-      ),
-    );
+    updateStatus.mutate({ status, trackId });
+  }
+
+  function searchReplacement(trackId: string) {
+    logClientEvent("info", "web.decision.search.clicked", {
+      conversionId,
+      trackId,
+    });
+    searchMatch.mutate(trackId);
   }
 
   return (
@@ -102,7 +143,7 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
               <div className="flex justify-end gap-2">
                 <Button
                   aria-label="Accept match"
-                  disabled={!match}
+                  disabled={!match?.candidate || updateStatus.isPending}
                   onClick={() => updateDecision(track.id, "accepted")}
                   size="icon"
                   variant={
@@ -113,8 +154,8 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                 </Button>
                 <Button
                   aria-label="Search replacement"
-                  disabled={!match}
-                  onClick={() => updateDecision(track.id, "review")}
+                  disabled={searchMatch.isPending}
+                  onClick={() => searchReplacement(track.id)}
                   size="icon"
                   variant="ghost"
                 >
@@ -122,7 +163,7 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                 </Button>
                 <Button
                   aria-label="Skip track"
-                  disabled={!match}
+                  disabled={updateStatus.isPending}
                   onClick={() => updateDecision(track.id, "skipped")}
                   size="icon"
                   variant={match?.status === "skipped" ? "secondary" : "ghost"}

@@ -185,7 +185,12 @@ export function ConvertPage() {
         </CardContent>
       </Card>
 
-      {conversion ? <MatchReviewTable conversion={conversion} /> : null}
+      {conversion ? (
+        <MatchReviewTable
+          conversion={conversion}
+          onConversionChange={setLiveConversion}
+        />
+      ) : null}
     </section>
   );
 }

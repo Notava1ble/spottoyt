@@ -26,9 +26,21 @@ class MockEventSource {
 function mockApi({
   latestConversion = null,
   matchedConversion = null,
+  matchingSettings = {
+    autoAcceptThreshold: 0.86,
+    reviewThreshold: 0.62,
+    searchLimit: 10,
+    includeVideos: true,
+  },
 }: {
   latestConversion?: unknown | (() => unknown);
   matchedConversion?: unknown | (() => unknown);
+  matchingSettings?: {
+    autoAcceptThreshold: number;
+    reviewThreshold: number;
+    searchLimit: number;
+    includeVideos: boolean;
+  };
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -61,6 +73,21 @@ function mockApi({
         return new Response(JSON.stringify({ conversion }), { status: 200 });
       }
 
+      if (url.endsWith("/settings/matching")) {
+        if (method === "PATCH") {
+          const patch = init?.body
+            ? (JSON.parse(init.body.toString()) as Partial<
+                typeof matchingSettings
+              >)
+            : {};
+          matchingSettings = { ...matchingSettings, ...patch };
+        }
+
+        return new Response(JSON.stringify({ settings: matchingSettings }), {
+          status: 200,
+        });
+      }
+
       if (method === "POST" && url.match(/\/conversions\/.+\/match$/)) {
         const conversion =
           typeof matchedConversion === "function"
@@ -74,6 +101,75 @@ function mockApi({
           }),
           { status: 200 },
         );
+      }
+
+      if (
+        method === "POST" &&
+        url.match(/\/conversions\/.+\/matches\/.+\/status$/)
+      ) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+        const body = init?.body
+          ? (JSON.parse(init.body.toString()) as { status: string })
+          : { status: "review" };
+
+        if (conversion && typeof conversion === "object" && "matches" in conversion) {
+          const nextConversion = structuredClone(conversion);
+          const firstMatch = nextConversion.matches[0];
+          firstMatch.status = body.status;
+
+          if (body.status === "skipped") {
+            firstMatch.candidate = null;
+            firstMatch.confidence = 0;
+          }
+
+          latestConversion = nextConversion;
+
+          return new Response(
+            JSON.stringify({
+              conversion: nextConversion,
+              match: firstMatch,
+              summary: { accepted: 0, review: 1, skipped: 1, total: 2 },
+            }),
+            { status: 200 },
+          );
+        }
+      }
+
+      if (
+        method === "POST" &&
+        url.match(/\/conversions\/.+\/matches\/.+\/search$/)
+      ) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+
+        if (conversion && typeof conversion === "object" && "matches" in conversion) {
+          const nextConversion = structuredClone(conversion);
+          const firstMatch = nextConversion.matches[0];
+          firstMatch.candidate = {
+            videoId: "ytm-track-1-retry",
+            title: "M83 - Midnight City (Official Video)",
+            artists: ["M83"],
+            durationMs: 244000,
+            resultType: "video",
+          };
+          firstMatch.confidence = 0.94;
+          firstMatch.status = "accepted";
+          latestConversion = nextConversion;
+
+          return new Response(
+            JSON.stringify({
+              conversion: nextConversion,
+              match: firstMatch,
+              summary: { accepted: 1, review: 1, skipped: 0, total: 2 },
+            }),
+            { status: 200 },
+          );
+        }
       }
 
       if (method === "POST" && url.endsWith("/imports/reset")) {
@@ -212,6 +308,48 @@ describe("app shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("loads and saves matching settings in settings", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockApi();
+
+    render(<App initialEntries={["/settings"]} />);
+
+    const autoAccept = await screen.findByLabelText(/auto-accept/i);
+    const reviewFloor = screen.getByLabelText(/review floor/i);
+    const searchLimit = screen.getByLabelText(/search limit/i);
+    const includeVideos = screen.getByLabelText(/include video results/i);
+
+    expect(autoAccept).toHaveValue(86);
+    expect(reviewFloor).toHaveValue(62);
+    expect(searchLimit).toHaveValue(10);
+    expect(includeVideos).toBeChecked();
+
+    await user.clear(autoAccept);
+    await user.type(autoAccept, "90");
+    await user.clear(searchLimit);
+    await user.type(searchLimit, "14");
+    await user.click(includeVideos);
+    await user.click(
+      screen.getByRole("button", { name: /save matching settings/i }),
+    );
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url.toString().endsWith("/settings/matching") &&
+            init?.method === "PATCH" &&
+            init.body?.toString().includes('"autoAcceptThreshold":0.9') &&
+            init.body?.toString().includes('"searchLimit":14') &&
+            init.body?.toString().includes('"includeVideos":false')
+          );
+        }),
+      ).toBe(true),
+    );
+  });
+
   it("starts from the Spicetify import surface in convert", async () => {
     mockApi();
 
@@ -287,5 +425,53 @@ describe("app shell", () => {
     expect(screen.getAllByText("Midnight City")).toHaveLength(2);
     expect(screen.getAllByText("Outro")).toHaveLength(2);
     expect(screen.getAllByText("92%")).toHaveLength(2);
+  });
+
+  it("persists review table skip and search actions", async () => {
+    const user = userEvent.setup();
+    const conversion = matchedConversion();
+    const fetchMock = mockApi({
+      latestConversion: conversion,
+      matchedConversion: conversion,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await screen.findByText(/matches ready for review/i);
+    const skipButton = screen
+      .getAllByRole("button", { name: /skip track/i })
+      .at(0);
+
+    if (!skipButton) {
+      throw new Error("Expected a skip button.");
+    }
+
+    await user.click(skipButton);
+
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        call[0].toString().includes("/matches/spotify%3Atrack%3Atrack-1/status"),
+      ),
+    ).toBe(true);
+    expect(await screen.findByText(/no safe match/i)).toBeInTheDocument();
+
+    const searchButton = screen
+      .getAllByRole("button", { name: /search replacement/i })
+      .at(0);
+
+    if (!searchButton) {
+      throw new Error("Expected a search replacement button.");
+    }
+
+    await user.click(searchButton);
+
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        call[0].toString().includes("/matches/spotify%3Atrack%3Atrack-1/search"),
+      ),
+    ).toBe(true);
+    expect(
+      await screen.findByText("M83 - Midnight City (Official Video)"),
+    ).toBeInTheDocument();
   });
 });
