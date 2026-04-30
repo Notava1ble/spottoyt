@@ -1,3 +1,10 @@
+import {
+  getPlaylistIdFromUri,
+  normalizePlaylistContents,
+  type PlaylistContentItem,
+  shouldShowPlaylistExtract,
+} from "./playlist";
+
 const DEFAULT_API_URL = "http://127.0.0.1:4317";
 const API_URL_STORAGE_KEY = "spottoyt-api-url";
 const SPOTIFY_PLAYLIST_PATH = /\/playlist\/([A-Za-z0-9]+)/;
@@ -5,28 +12,6 @@ const SPOTIFY_PLAYLIST_PATH = /\/playlist\/([A-Za-z0-9]+)/;
 type SpotifyPlaylistResponse = {
   name: string;
   uri: string;
-};
-
-type SpotifyTrackPage = {
-  items: Array<{
-    track?: {
-      album?: {
-        name?: string;
-      };
-      artists?: Array<{
-        name?: string;
-      }>;
-      duration_ms?: number;
-      explicit?: boolean;
-      external_ids?: {
-        isrc?: string;
-      };
-      name?: string;
-      type?: string;
-      uri?: string;
-    } | null;
-  }>;
-  next: string | null;
 };
 
 type SpicetifySnapshot = {
@@ -56,23 +41,56 @@ async function boot() {
     return;
   }
 
-  const topbar = Spicetify.Topbar;
-
-  if (!topbar) {
-    return;
+  if (Spicetify.Topbar) {
+    new Spicetify.Topbar.Button("Send to SpottoYT", "download", () => {
+      void sendCurrentPlaylist();
+    });
   }
 
-  new topbar.Button("Send to SpottoYT", "download", sendPlaylist);
+  registerPlaylistContextMenu();
   notify("SpottoYT bridge ready");
 }
 
 function isReady() {
   return Boolean(
-    Spicetify.CosmosAsync && Spicetify.Platform && Spicetify.Topbar,
+    Spicetify.ContextMenu &&
+      Spicetify.CosmosAsync &&
+      Spicetify.Platform?.PlaylistAPI &&
+      Spicetify.URI,
   );
 }
 
-async function sendPlaylist() {
+function registerPlaylistContextMenu() {
+  const contextMenu = Spicetify.ContextMenu;
+  const uri = Spicetify.URI;
+
+  if (!contextMenu || !uri) {
+    return;
+  }
+
+  const uriApi = {
+    fromString: uri.fromString,
+    type: uri.Type,
+  };
+
+  new contextMenu.Item(
+    "Extract to SpottoYT",
+    async (uris) => {
+      const playlistId = getPlaylistIdFromUri(uris[0] ?? "");
+
+      if (!playlistId) {
+        notify("Choose a Spotify playlist first", true);
+        return;
+      }
+
+      await sendPlaylist(playlistId);
+    },
+    (uris) => shouldShowPlaylistExtract(uris, uriApi),
+    "download",
+  ).register();
+}
+
+async function sendCurrentPlaylist() {
   try {
     const playlistId = getCurrentPlaylistId();
 
@@ -81,6 +99,24 @@ async function sendPlaylist() {
       return;
     }
 
+    await sendPlaylist(playlistId);
+  } catch (error) {
+    notify(
+      error instanceof Error ? error.message : "SpottoYT sync failed",
+      true,
+    );
+  }
+}
+
+function getCurrentPlaylistId() {
+  const pathname =
+    Spicetify.Platform?.History?.location?.pathname ?? window.location.pathname;
+
+  return pathname.match(SPOTIFY_PLAYLIST_PATH)?.[1] ?? null;
+}
+
+async function sendPlaylist(playlistId: string) {
+  try {
     const snapshot = await readPlaylistSnapshot(playlistId);
 
     if (snapshot.tracks.length === 0) {
@@ -96,13 +132,6 @@ async function sendPlaylist() {
       true,
     );
   }
-}
-
-function getCurrentPlaylistId() {
-  const pathname =
-    Spicetify.Platform?.History?.location?.pathname ?? window.location.pathname;
-
-  return pathname.match(SPOTIFY_PLAYLIST_PATH)?.[1] ?? null;
 }
 
 async function readPlaylistSnapshot(
@@ -123,47 +152,16 @@ async function readPlaylistSnapshot(
 }
 
 async function readPlaylistTracks(playlistId: string) {
-  const tracks: SpicetifySnapshot["tracks"] = [];
-  let nextUrl: string | null =
-    `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100&offset=0`;
+  const page = await getPlaylistApi().getContents(
+    `spotify:playlist:${playlistId}`,
+    { limit: 9999999 },
+  );
 
-  while (nextUrl) {
-    const page: SpotifyTrackPage =
-      await getCosmos().get<SpotifyTrackPage>(nextUrl);
-
-    for (const item of page.items) {
-      const track = item.track;
-      const artists =
-        track?.artists
-          ?.map((artist) => artist.name)
-          .filter((name): name is string => Boolean(name)) ?? [];
-
-      if (
-        track?.type !== "track" ||
-        !track.uri ||
-        !track.name ||
-        artists.length === 0 ||
-        !track.duration_ms
-      ) {
-        continue;
-      }
-
-      tracks.push({
-        spotifyUri: track.uri,
-        title: track.name,
-        artists,
-        album: track.album?.name,
-        durationMs: track.duration_ms,
-        isrc: track.external_ids?.isrc,
-        explicit: track.explicit ?? false,
-        position: tracks.length + 1,
-      });
-    }
-
-    nextUrl = page.next;
+  if (!Array.isArray(page.items)) {
+    throw new Error("Spicetify returned playlist contents without tracks");
   }
 
-  return tracks;
+  return normalizePlaylistContents(page.items as PlaylistContentItem[]);
 }
 
 function getCosmos() {
@@ -174,6 +172,16 @@ function getCosmos() {
   }
 
   return cosmos;
+}
+
+function getPlaylistApi() {
+  const playlistApi = Spicetify.Platform?.PlaylistAPI;
+
+  if (!playlistApi) {
+    throw new Error("Spicetify Playlist API is not ready");
+  }
+
+  return playlistApi;
 }
 
 async function postSnapshot(snapshot: SpicetifySnapshot) {
