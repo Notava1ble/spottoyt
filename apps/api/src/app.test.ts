@@ -314,4 +314,59 @@ describe("api shell", () => {
 
     await app.close();
   });
+
+  it("emits domain logs for import and matching lifecycle", async () => {
+    const events: Array<{ event: string; fields?: Record<string, unknown> }> =
+      [];
+    const captureEvent = (
+      _level: string,
+      _source: string,
+      event: string,
+      fields?: Record<string, unknown>,
+    ) => {
+      events.push({ event, fields });
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        logEvent: captureEvent,
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks() {
+              return [
+                {
+                  trackId: "spotify:track:midnight-city",
+                  candidates: [],
+                },
+              ];
+            },
+          }),
+          undefined,
+          captureEvent,
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    expect(events.map((item) => item.event)).toEqual(
+      expect.arrayContaining([
+        "import.spicetify.received",
+        "import.spicetify.accepted",
+        "conversion.match.started",
+        "conversion.match.completed",
+      ]),
+    );
+
+    await app.close();
+  });
 });

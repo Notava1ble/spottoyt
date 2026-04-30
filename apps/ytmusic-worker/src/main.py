@@ -26,14 +26,19 @@ def normalize_result(result: dict[str, Any]) -> dict[str, Any] | None:
     if not video_id or not title or not duration_seconds:
         return None
 
-    return {
+    candidate = {
         "videoId": video_id,
         "title": title,
         "artists": normalize_artists(result.get("artists")),
-        "album": normalize_album(result.get("album")),
         "durationMs": int(duration_seconds) * 1000,
         "resultType": result_type,
     }
+    album = normalize_album(result.get("album"))
+
+    if album is not None:
+        candidate["album"] = album
+
+    return candidate
 
 
 def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -161,7 +166,6 @@ def normalize_youtube_video(
         "videoId": video_id,
         "title": title,
         "artists": [primary_artist] if primary_artist else [entry.get("channel", "YouTube")],
-        "album": None,
         "durationMs": int(duration) * 1000,
         "resultType": "video",
     }

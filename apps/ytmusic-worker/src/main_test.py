@@ -29,6 +29,28 @@ class YtmusicWorkerTest(unittest.TestCase):
             },
         )
 
+    def test_normalize_result_omits_missing_album(self):
+        result = normalize_result(
+            {
+                "videoId": "abc123",
+                "title": "Midnight City",
+                "artists": [{"name": "M83"}],
+                "duration_seconds": 243,
+                "resultType": "song",
+            }
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "videoId": "abc123",
+                "title": "Midnight City",
+                "artists": ["M83"],
+                "durationMs": 243000,
+                "resultType": "song",
+            },
+        )
+
     @patch("main.YTMusic")
     @patch("main.YoutubeDL")
     def test_match_tracks_uses_default_search_and_filters_music_results(
@@ -134,7 +156,6 @@ class YtmusicWorkerTest(unittest.TestCase):
                             "videoId": "dX3k_QDnzHE",
                             "title": "M83 'Midnight City' Official video",
                             "artists": ["M83"],
-                            "album": None,
                             "durationMs": 244000,
                             "resultType": "video",
                         }

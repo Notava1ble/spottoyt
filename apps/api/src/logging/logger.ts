@@ -1,5 +1,6 @@
 import { createWriteStream } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyBaseLogger, FastifyServerOptions } from "fastify";
 import { prepareLogFile } from "./file-log-store";
 import { redactLogFields } from "./redact";
@@ -33,7 +34,7 @@ export function createApiLoggerOptions(
   }
 
   const logPath = prepareLogFile({
-    logDir: resolve(config.logDir),
+    logDir: resolveLogDir(config.logDir),
     retain: config.logRetain,
   });
 
@@ -43,6 +44,14 @@ export function createApiLoggerOptions(
     stream: createWriteStream(logPath, { flags: "a" }),
     timestamp: () => `,"time":"${new Date().toISOString()}"`,
   };
+}
+
+export function resolveLogDir(logDir: string) {
+  if (isAbsolute(logDir)) {
+    return logDir;
+  }
+
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../../", logDir);
 }
 
 export function createLogEventWriter(

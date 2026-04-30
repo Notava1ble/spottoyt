@@ -94,7 +94,8 @@ export function buildApp(
   });
   const logEvent =
     dependencies.logEvent ?? createLogEventWriter(app.log || false);
-  const conversions = dependencies.conversions ?? new ConversionService();
+  const conversions =
+    dependencies.conversions ?? new ConversionService(undefined, undefined, logEvent);
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
