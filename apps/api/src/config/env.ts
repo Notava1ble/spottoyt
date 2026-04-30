@@ -10,6 +10,10 @@ export function getEnv() {
     apiPort: Number(source.API_PORT ?? 4317),
     apiHost: source.API_HOST ?? "127.0.0.1",
     webUrl: source.WEB_URL ?? "http://127.0.0.1:5173/",
+    logLevel: source.LOG_LEVEL ?? "debug",
+    logDir: source.SPOTTOYT_LOG_DIR ?? ".logs",
+    logRetain: Number(source.SPOTTOYT_LOG_RETAIN ?? 5),
+    nodeEnv: source.NODE_ENV ?? "development",
   };
 }
 

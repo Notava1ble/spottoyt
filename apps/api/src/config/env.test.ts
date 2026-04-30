@@ -38,4 +38,27 @@ describe("environment config", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("should load local logging settings", () => {
+    const root = mkdtempSync(join(tmpdir(), "spottoyt-env-"));
+
+    try {
+      writeFileSync(
+        join(root, ".env"),
+        [
+          "LOG_LEVEL=trace",
+          "SPOTTOYT_LOG_DIR=.custom-logs",
+          "SPOTTOYT_LOG_RETAIN=3",
+        ].join("\n"),
+      );
+
+      expect(getEnvSource(root)).toMatchObject({
+        LOG_LEVEL: "trace",
+        SPOTTOYT_LOG_DIR: ".custom-logs",
+        SPOTTOYT_LOG_RETAIN: "3",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
