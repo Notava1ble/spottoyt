@@ -40,7 +40,7 @@ export function createApiLoggerOptions(
 
   return {
     level: config.logLevel,
-    base: { service: "spottoyt-api" },
+    base: { service: "spottoyt-api", source: "api" },
     stream: createWriteStream(logPath, { flags: "a" }),
     timestamp: () => `,"time":"${new Date().toISOString()}"`,
   };
