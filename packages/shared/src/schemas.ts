@@ -65,6 +65,7 @@ export const conversionJobSchema = z.object({
   sourcePlaylistName: z.string(),
   targetPlaylistName: z.string(),
   status: z.enum([
+    "imported",
     "importing",
     "matching",
     "reviewing",

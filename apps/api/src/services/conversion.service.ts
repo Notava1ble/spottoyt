@@ -1,8 +1,6 @@
 import {
   type ConversionJob,
   conversionJobSchema,
-  type MatchDecision,
-  mockConversionJob,
   type SpicetifyPlaylistSnapshot,
   type SpotifyTrack,
 } from "@spottoyt/shared";
@@ -18,17 +16,21 @@ export class ConversionService {
   ) {}
 
   importSpicetifySnapshot(snapshot: SpicetifyPlaylistSnapshot): ConversionJob {
+    if (this.latestImport && this.latestImport.status !== "imported") {
+      throw new ImportLockedError();
+    }
+
     const now = new Date().toISOString();
     const tracks = snapshot.tracks.map(toSpotifyTrack);
     const conversion = conversionJobSchema.parse({
       id: `conversion-${playlistIdFromUri(snapshot.spotifyPlaylistUri)}-${Date.now()}`,
       sourcePlaylistName: snapshot.playlistName,
       targetPlaylistName: `${snapshot.playlistName} - YouTube Music`,
-      status: "reviewing",
+      status: "imported",
       createdAt: now,
       updatedAt: now,
       tracks,
-      matches: tracks.map(toPendingMatch),
+      matches: [],
     });
 
     this.latestImport = conversion;
@@ -39,23 +41,42 @@ export class ConversionService {
     return this.latestImport ?? null;
   }
 
-  async getConversion(id: string): Promise<ConversionJob> {
-    return conversionJobSchema.parse({
-      ...mockConversionJob,
-      id,
-    });
+  resetImport() {
+    this.latestImport = undefined;
+    return { ok: true };
+  }
+
+  getConversion(id: string): ConversionJob {
+    const conversion = this.requireLatestConversion(id);
+    return conversionJobSchema.parse(conversion);
   }
 
   async matchConversion(id: string) {
-    const conversion = await this.getConversion(id);
+    const conversion = this.requireLatestConversion(id);
+    const matching = conversionJobSchema.parse({
+      ...conversion,
+      status: "matching",
+      updatedAt: new Date().toISOString(),
+    });
+    this.latestImport = matching;
+
+    const matches = await this.ytmusic.findMatchesForTracks(matching.tracks);
+    const matched = conversionJobSchema.parse({
+      ...matching,
+      status: "reviewing",
+      updatedAt: new Date().toISOString(),
+      matches,
+    });
+    this.latestImport = matched;
+
     return {
-      conversion,
-      summary: this.matcher.summarize(conversion.matches),
+      conversion: matched,
+      summary: this.matcher.summarize(matched.matches),
     };
   }
 
   async createPlaylist(id: string) {
-    const conversion = await this.getConversion(id);
+    const conversion = this.getConversion(id);
     const playlist = await this.ytmusic.createPlaylist();
 
     return {
@@ -64,6 +85,26 @@ export class ConversionService {
       targetPlaylistName: conversion.targetPlaylistName,
       playlist,
     };
+  }
+
+  private requireLatestConversion(id: string): ConversionJob {
+    if (!this.latestImport || this.latestImport.id !== id) {
+      throw new ConversionNotFoundError();
+    }
+
+    return this.latestImport;
+  }
+}
+
+export class ImportLockedError extends Error {
+  constructor() {
+    super("Import is locked");
+  }
+}
+
+export class ConversionNotFoundError extends Error {
+  constructor() {
+    super("Conversion not found");
   }
 }
 
@@ -77,22 +118,6 @@ function toSpotifyTrack(track: SpicetifyPlaylistSnapshot["tracks"][number]) {
     isrc: track.isrc,
     explicit: track.explicit ?? false,
   } satisfies SpotifyTrack;
-}
-
-function toPendingMatch(track: SpotifyTrack): MatchDecision {
-  return {
-    trackId: track.id,
-    candidate: {
-      videoId: `pending-${track.id}`,
-      title: track.title,
-      artists: track.artists,
-      album: track.album,
-      durationMs: track.durationMs,
-      resultType: "song",
-    },
-    confidence: 0.5,
-    status: "review",
-  };
 }
 
 function playlistIdFromUri(uri: string) {

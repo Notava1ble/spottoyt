@@ -15,6 +15,17 @@ describe("shared schemas", () => {
     expect(parsed.matches[0]?.confidence).toBeGreaterThan(0.9);
   });
 
+  it("allows imported conversions before matching starts", () => {
+    const parsed = conversionJobSchema.parse({
+      ...mockConversionJob,
+      status: "imported",
+      matches: [],
+    });
+
+    expect(parsed.status).toBe("imported");
+    expect(parsed.matches).toHaveLength(0);
+  });
+
   it("parses account status for YouTube Music only", () => {
     const parsed = accountStatusResponseSchema.parse({
       youtubeMusic: {

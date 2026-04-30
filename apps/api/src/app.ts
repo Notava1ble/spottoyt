@@ -6,7 +6,11 @@ import {
   spicetifyPlaylistSnapshotSchema,
 } from "@spottoyt/shared";
 import Fastify, { type FastifyServerOptions } from "fastify";
-import { ConversionService } from "./services/conversion.service";
+import {
+  ConversionNotFoundError,
+  ConversionService,
+  ImportLockedError,
+} from "./services/conversion.service";
 import { ImportEventsService } from "./services/import-events.service";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
@@ -137,7 +141,21 @@ export function buildApp(options: FastifyServerOptions = {}) {
         };
       }
 
-      const conversion = conversions.importSpicetifySnapshot(parsed.data);
+      let conversion;
+      try {
+        conversion = conversions.importSpicetifySnapshot(parsed.data);
+      } catch (error) {
+        if (error instanceof ImportLockedError) {
+          reply.code(409);
+          return {
+            error: "Import is locked",
+            message:
+              "Reset the current conversion before importing another playlist.",
+          };
+        }
+
+        throw error;
+      }
       importEvents.publish({
         type: "spicetify-imported",
         conversionId: conversion.id,
@@ -150,26 +168,60 @@ export function buildApp(options: FastifyServerOptions = {}) {
     },
   });
 
+  app.post("/imports/reset", async () => conversions.resetImport());
+
   app.get<{ Params: { id: string } }>("/conversions/:id", {
     schema: {
       params: conversionParamsSchema,
     },
-    handler: async (request) => conversions.getConversion(request.params.id),
+    handler: async (request, reply) => {
+      try {
+        return conversions.getConversion(request.params.id);
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
   });
 
   app.post<{ Params: { id: string } }>("/conversions/:id/match", {
     schema: {
       params: conversionParamsSchema,
     },
-    handler: async (request) => conversions.matchConversion(request.params.id),
+    handler: async (request, reply) => {
+      try {
+        return await conversions.matchConversion(request.params.id);
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
   });
 
   app.post<{ Params: { id: string } }>("/conversions/:id/create", {
     schema: {
       params: conversionParamsSchema,
     },
-    handler: async (request) => conversions.createPlaylist(request.params.id),
+    handler: async (request, reply) => {
+      try {
+        return await conversions.createPlaylist(request.params.id);
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
   });
 
   return app;
+}
+
+function handleConversionError(
+  error: unknown,
+  reply: {
+    code: (statusCode: number) => void;
+  },
+) {
+  if (error instanceof ConversionNotFoundError) {
+    reply.code(404);
+    return { error: "Conversion not found" };
+  }
+
+  throw error;
 }
