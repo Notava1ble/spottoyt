@@ -4,34 +4,14 @@ import {
   latestImportResponseSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
-  spotifyPlaylistsResponseSchema,
-  spotifyPlaylistUrlSchema,
 } from "@spottoyt/shared";
 import Fastify, { type FastifyServerOptions } from "fastify";
-import { getEnv } from "./config/env";
 import { ConversionService } from "./services/conversion.service";
 import { ImportEventsService } from "./services/import-events.service";
-import {
-  SpotifyAuthError,
-  SpotifyAuthService,
-} from "./services/spotify-auth.service";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
 
-type ImportPlaylistBody = {
-  playlistUrl: string;
-};
-
 type SpicetifyImportBody = unknown;
-
-const importPlaylistBodySchema = {
-  type: "object",
-  required: ["playlistUrl"],
-  additionalProperties: false,
-  properties: {
-    playlistUrl: { type: "string", minLength: 1 },
-  },
-} as const;
 
 const conversionParamsSchema = {
   type: "object",
@@ -90,12 +70,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
   });
   const conversions = new ConversionService();
   const importEvents = new ImportEventsService();
-  const currentEnv = getEnv();
-  const spotifyAuth = new SpotifyAuthService({
-    clientId: currentEnv.spotifyClientId,
-    clientSecret: currentEnv.spotifyClientSecret,
-    redirectUri: currentEnv.spotifyRedirectUri,
-  });
 
   app.register(cors, {
     origin: true,
@@ -108,7 +82,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
 
   app.get("/auth/status", async () =>
     accountStatusResponseSchema.parse({
-      spotify: spotifyAuth.getStatus(),
       youtubeMusic: {
         provider: "youtubeMusic",
         connected: false,
@@ -116,48 +89,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
       },
     }),
   );
-
-  app.get("/auth/spotify/login", async (_request, reply) => {
-    try {
-      return reply.redirect(spotifyAuth.getAuthorizeUrl());
-    } catch (error) {
-      return handleSpotifyAuthError(error, reply);
-    }
-  });
-
-  app.get<{
-    Querystring: { code?: string; state?: string; error?: string };
-  }>("/auth/spotify/callback", async (request, reply) => {
-    if (request.query.error) {
-      reply.code(400);
-      return { error: request.query.error };
-    }
-
-    try {
-      await spotifyAuth.completeCallback(
-        request.query.code,
-        request.query.state,
-      );
-      return reply.redirect(currentEnv.webUrl);
-    } catch (error) {
-      return handleSpotifyAuthError(error, reply);
-    }
-  });
-
-  app.post("/auth/spotify/logout", async () => {
-    spotifyAuth.logout();
-    return { ok: true };
-  });
-
-  app.get("/spotify/playlists", async (_request, reply) => {
-    try {
-      return spotifyPlaylistsResponseSchema.parse({
-        playlists: await spotifyAuth.listPlaylists(),
-      });
-    } catch (error) {
-      return handleSpotifyAuthError(error, reply);
-    }
-  });
 
   app.get("/system/status", async () => ({
     database: getDatabaseStatus(),
@@ -219,29 +150,6 @@ export function buildApp(options: FastifyServerOptions = {}) {
     },
   });
 
-  app.post<{ Body: ImportPlaylistBody }>("/playlists/import", {
-    schema: {
-      body: importPlaylistBodySchema,
-    },
-    handler: async (request, reply) => {
-      const parsedUrl = spotifyPlaylistUrlSchema.safeParse(
-        request.body.playlistUrl,
-      );
-
-      if (!parsedUrl.success) {
-        reply.code(400);
-        return {
-          error: "Invalid playlist URL",
-          message:
-            parsedUrl.error.issues[0]?.message ??
-            "Expected a Spotify playlist URL",
-        };
-      }
-
-      return conversions.importPlaylist(parsedUrl.data);
-    },
-  });
-
   app.get<{ Params: { id: string } }>("/conversions/:id", {
     schema: {
       params: conversionParamsSchema,
@@ -264,18 +172,4 @@ export function buildApp(options: FastifyServerOptions = {}) {
   });
 
   return app;
-}
-
-function handleSpotifyAuthError(
-  error: unknown,
-  reply: {
-    code: (statusCode: number) => void;
-  },
-) {
-  if (error instanceof SpotifyAuthError) {
-    reply.code(error.statusCode);
-    return { error: error.message };
-  }
-
-  throw error;
 }

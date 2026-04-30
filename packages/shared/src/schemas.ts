@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const providerSchema = z.enum(["spotify", "youtubeMusic"]);
+export const providerSchema = z.enum(["youtubeMusic"]);
 
 export const connectionStatusSchema = z.object({
   provider: providerSchema,
@@ -12,20 +12,8 @@ export const connectionStatusSchema = z.object({
 });
 
 export const accountStatusResponseSchema = z.object({
-  spotify: connectionStatusSchema,
   youtubeMusic: connectionStatusSchema,
 });
-
-export const spotifyPlaylistUrlSchema = z
-  .string()
-  .url()
-  .refine(
-    (value) =>
-      /^https:\/\/open\.spotify\.com\/playlist\/[A-Za-z0-9]+/.test(value),
-    {
-      message: "Expected a Spotify playlist URL",
-    },
-  );
 
 export const spotifyTrackSchema = z.object({
   id: z.string(),
@@ -35,21 +23,6 @@ export const spotifyTrackSchema = z.object({
   durationMs: z.number().int().positive(),
   isrc: z.string().optional(),
   explicit: z.boolean(),
-});
-
-export const spotifyPlaylistSummarySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  trackCount: z.number().int().nonnegative(),
-  public: z.boolean().nullable(),
-  collaborative: z.boolean(),
-  ownerName: z.string().optional(),
-  externalUrl: z.string().url().optional(),
-  imageUrl: z.string().url().optional(),
-});
-
-export const spotifyPlaylistsResponseSchema = z.object({
-  playlists: z.array(spotifyPlaylistSummarySchema),
 });
 
 export const spicetifyPlaylistTrackSchema = z.object({

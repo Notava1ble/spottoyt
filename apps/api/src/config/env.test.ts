@@ -1,48 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { getEnvSource } from "./env";
 
-const originalSpotifyEnv = {
-  clientId: process.env.SPOTIFY_CLIENT_ID,
-  clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-  redirectUri: process.env.SPOTIFY_REDIRECT_URI,
-};
-
-function clearSpotifyEnv() {
-  delete process.env.SPOTIFY_CLIENT_ID;
-  delete process.env.SPOTIFY_CLIENT_SECRET;
-  delete process.env.SPOTIFY_REDIRECT_URI;
-}
-
-function restoreSpotifyEnv() {
-  if (originalSpotifyEnv.clientId === undefined) {
-    delete process.env.SPOTIFY_CLIENT_ID;
-  } else {
-    process.env.SPOTIFY_CLIENT_ID = originalSpotifyEnv.clientId;
-  }
-
-  if (originalSpotifyEnv.clientSecret === undefined) {
-    delete process.env.SPOTIFY_CLIENT_SECRET;
-  } else {
-    process.env.SPOTIFY_CLIENT_SECRET = originalSpotifyEnv.clientSecret;
-  }
-
-  if (originalSpotifyEnv.redirectUri === undefined) {
-    delete process.env.SPOTIFY_REDIRECT_URI;
-  } else {
-    process.env.SPOTIFY_REDIRECT_URI = originalSpotifyEnv.redirectUri;
-  }
-}
-
-afterEach(() => {
-  restoreSpotifyEnv();
-});
-
 describe("environment config", () => {
-  it("should load Spotify credentials from a parent .env file", () => {
-    clearSpotifyEnv();
+  it("should load local app settings from a parent .env file", () => {
     const root = mkdtempSync(join(tmpdir(), "spottoyt-env-"));
     const apiCwd = join(root, "apps", "api");
 
@@ -50,17 +13,12 @@ describe("environment config", () => {
       mkdirSync(apiCwd, { recursive: true });
       writeFileSync(
         join(root, ".env"),
-        [
-          "SPOTIFY_CLIENT_ID=test-client-id",
-          "SPOTIFY_CLIENT_SECRET=test-client-secret",
-          "SPOTIFY_REDIRECT_URI=http://127.0.0.1:4317/auth/spotify/callback",
-        ].join("\n"),
+        ["API_PORT=4318", "WEB_URL=http://127.0.0.1:5174/"].join("\n"),
       );
 
       expect(getEnvSource(apiCwd)).toMatchObject({
-        SPOTIFY_CLIENT_ID: "test-client-id",
-        SPOTIFY_CLIENT_SECRET: "test-client-secret",
-        SPOTIFY_REDIRECT_URI: "http://127.0.0.1:4317/auth/spotify/callback",
+        API_PORT: "4318",
+        WEB_URL: "http://127.0.0.1:5174/",
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -71,11 +29,12 @@ describe("environment config", () => {
     const root = mkdtempSync(join(tmpdir(), "spottoyt-env-"));
 
     try {
-      process.env.SPOTIFY_CLIENT_ID = "runtime-client-id";
-      writeFileSync(join(root, ".env"), "SPOTIFY_CLIENT_ID=file-client-id");
+      process.env.API_PORT = "4400";
+      writeFileSync(join(root, ".env"), "API_PORT=4300");
 
-      expect(getEnvSource(root).SPOTIFY_CLIENT_ID).toBe("runtime-client-id");
+      expect(getEnvSource(root).API_PORT).toBe("4400");
     } finally {
+      delete process.env.API_PORT;
       rmSync(root, { recursive: true, force: true });
     }
   });

@@ -10,11 +10,6 @@ export function getEnv() {
     apiPort: Number(source.API_PORT ?? 4317),
     apiHost: source.API_HOST ?? "127.0.0.1",
     webUrl: source.WEB_URL ?? "http://127.0.0.1:5173/",
-    spotifyClientId: source.SPOTIFY_CLIENT_ID ?? "",
-    spotifyClientSecret: source.SPOTIFY_CLIENT_SECRET ?? "",
-    spotifyRedirectUri:
-      source.SPOTIFY_REDIRECT_URI ??
-      "http://127.0.0.1:4317/auth/spotify/callback",
   };
 }
 

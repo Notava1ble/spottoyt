@@ -9,8 +9,6 @@ import type {
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
   spicetifyPlaylistTrackSchema,
-  spotifyPlaylistSummarySchema,
-  spotifyPlaylistsResponseSchema,
   spotifyTrackSchema,
   ytmusicCandidateSchema,
 } from "./schemas";
@@ -18,12 +16,6 @@ import type {
 export type ConnectionStatus = z.infer<typeof connectionStatusSchema>;
 export type AccountStatusResponse = z.infer<typeof accountStatusResponseSchema>;
 export type SpotifyTrack = z.infer<typeof spotifyTrackSchema>;
-export type SpotifyPlaylistSummary = z.infer<
-  typeof spotifyPlaylistSummarySchema
->;
-export type SpotifyPlaylistsResponse = z.infer<
-  typeof spotifyPlaylistsResponseSchema
->;
 export type SpicetifyPlaylistTrack = z.infer<
   typeof spicetifyPlaylistTrackSchema
 >;

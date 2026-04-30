@@ -7,33 +7,15 @@ import {
   type SpotifyTrack,
 } from "@spottoyt/shared";
 import { MatcherService } from "./matcher.service";
-import { SpotifyService } from "./spotify.service";
 import { YtmusicService } from "./ytmusic.service";
 
 export class ConversionService {
   private latestImport?: ConversionJob;
 
   constructor(
-    private readonly spotify = new SpotifyService(),
     private readonly ytmusic = new YtmusicService(),
     private readonly matcher = new MatcherService(),
   ) {}
-
-  async importPlaylist(playlistUrl: string): Promise<ConversionJob> {
-    const tracks = await this.spotify.importPlaylist(playlistUrl);
-    const matches = await this.ytmusic.findMockMatches();
-    const now = new Date().toISOString();
-
-    return conversionJobSchema.parse({
-      ...mockConversionJob,
-      id: `conversion-${Date.now()}`,
-      createdAt: now,
-      updatedAt: now,
-      tracks,
-      matches,
-      status: "reviewing",
-    });
-  }
 
   importSpicetifySnapshot(snapshot: SpicetifyPlaylistSnapshot): ConversionJob {
     const now = new Date().toISOString();
