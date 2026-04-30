@@ -58,7 +58,7 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                 </p>
               </div>
               <div>
-                {match ? (
+                {match?.candidate ? (
                   <>
                     <p className="font-medium text-foreground">
                       {match.candidate.title}
@@ -66,6 +66,15 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                     <p className="text-muted-foreground text-sm">
                       {match.candidate.artists.join(", ")} -{" "}
                       {formatDuration(match.candidate.durationMs)}
+                    </p>
+                  </>
+                ) : match?.status === "skipped" ? (
+                  <>
+                    <p className="font-medium text-muted-foreground">
+                      No safe match
+                    </p>
+                    <p className="text-muted-foreground text-sm">
+                      This track needs a manual search later.
                     </p>
                   </>
                 ) : (

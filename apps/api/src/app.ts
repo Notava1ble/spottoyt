@@ -13,10 +13,15 @@ import {
   ImportLockedError,
 } from "./services/conversion.service";
 import { ImportEventsService } from "./services/import-events.service";
+import { YtmusicWorkerUnavailableError } from "./services/ytmusic.service";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
 
 type SpicetifyImportBody = unknown;
+
+type AppDependencies = {
+  conversions?: ConversionService;
+};
 
 const conversionParamsSchema = {
   type: "object",
@@ -68,12 +73,15 @@ const spicetifyImportBodySchema = {
   },
 } as const;
 
-export function buildApp(options: FastifyServerOptions = {}) {
+export function buildApp(
+  options: FastifyServerOptions = {},
+  dependencies: AppDependencies = {},
+) {
   const app = Fastify({
     logger: true,
     ...options,
   });
-  const conversions = new ConversionService();
+  const conversions = dependencies.conversions ?? new ConversionService();
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
@@ -222,6 +230,14 @@ function handleConversionError(
   if (error instanceof ConversionNotFoundError) {
     reply.code(404);
     return { error: "Conversion not found" };
+  }
+
+  if (error instanceof YtmusicWorkerUnavailableError) {
+    reply.code(503);
+    return {
+      error: "YouTube Music unavailable",
+      message: error.message,
+    };
   }
 
   throw error;

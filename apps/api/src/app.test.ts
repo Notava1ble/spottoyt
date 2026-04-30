@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app";
+import { ConversionService } from "./services/conversion.service";
+import {
+  YtmusicService,
+  YtmusicWorkerUnavailableError,
+} from "./services/ytmusic.service";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -134,7 +139,32 @@ describe("api shell", () => {
   });
 
   it("matches the latest imported playlist with YouTube Music details", async () => {
-    const app = buildApp({ logger: false });
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks() {
+              return [
+                {
+                  trackId: "spotify:track:midnight-city",
+                  candidates: [
+                    {
+                      videoId: "ytm-midnight-city",
+                      title: "Midnight City",
+                      artists: ["M83"],
+                      album: "Hurry Up, We're Dreaming",
+                      durationMs: 243000,
+                      resultType: "song",
+                    },
+                  ],
+                },
+              ];
+            },
+          }),
+        ),
+      },
+    );
     await app.ready();
 
     const imported = await app.inject({
@@ -157,6 +187,42 @@ describe("api shell", () => {
       "Midnight City",
     );
     expect(matched.json().summary.total).toBe(1);
+
+    await app.close();
+  });
+
+  it("returns service unavailable when the YouTube Music worker is not ready", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks() {
+              throw new YtmusicWorkerUnavailableError(
+                "Install ytmusicapi before matching.",
+              );
+            },
+          }),
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    const matched = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    expect(matched.statusCode).toBe(503);
+    expect(matched.json()).toEqual({
+      error: "YouTube Music unavailable",
+      message: "Install ytmusicapi before matching.",
+    });
 
     await app.close();
   });

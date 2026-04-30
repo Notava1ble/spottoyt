@@ -55,7 +55,7 @@ export const ytmusicCandidateSchema = z.object({
 
 export const matchDecisionSchema = z.object({
   trackId: z.string(),
-  candidate: ytmusicCandidateSchema,
+  candidate: ytmusicCandidateSchema.nullable(),
   confidence: z.number().min(0).max(1),
   status: z.enum(["accepted", "review", "skipped"]),
 });

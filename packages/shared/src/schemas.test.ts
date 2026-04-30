@@ -26,6 +26,27 @@ describe("shared schemas", () => {
     expect(parsed.matches).toHaveLength(0);
   });
 
+  it("allows skipped match decisions without a YouTube Music candidate", () => {
+    const parsed = conversionJobSchema.parse({
+      ...mockConversionJob,
+      matches: [
+        {
+          trackId: "spotify:track:missing",
+          candidate: null,
+          confidence: 0,
+          status: "skipped",
+        },
+      ],
+    });
+
+    expect(parsed.matches[0]).toEqual({
+      trackId: "spotify:track:missing",
+      candidate: null,
+      confidence: 0,
+      status: "skipped",
+    });
+  });
+
   it("parses account status for YouTube Music only", () => {
     const parsed = accountStatusResponseSchema.parse({
       youtubeMusic: {
