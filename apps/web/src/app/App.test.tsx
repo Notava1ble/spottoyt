@@ -81,6 +81,10 @@ function mockApi({
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
 
+      if (method === "POST" && url.endsWith("/logs/client")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 202 });
+      }
+
       return new Response("Not found", { status: 404 });
     },
   );

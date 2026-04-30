@@ -3,29 +3,54 @@ import type {
   ConversionJob,
   LatestImportResponse,
 } from "@spottoyt/shared";
+import { logClientEvent } from "./logger";
 
 export const apiUrl = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4317";
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`);
-
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
+  return apiRequest<T>(path);
 }
 
 export async function apiPost<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`, {
-    method: "POST",
-  });
+  return apiRequest<T>(path, { method: "POST" });
+}
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const startedAt = performance.now();
+  const method = init?.method ?? "GET";
+
+  logClientEvent("debug", "web.api.request.started", { method, path });
+
+  try {
+    const response = await fetch(`${apiUrl}${path}`, init);
+    const durationMs = Math.round(performance.now() - startedAt);
+
+    if (!response.ok) {
+      logClientEvent("warn", "web.api.request.failed", {
+        method,
+        path,
+        statusCode: response.status,
+        durationMs,
+      });
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    logClientEvent("debug", "web.api.request.completed", {
+      method,
+      path,
+      statusCode: response.status,
+      durationMs,
+    });
+
+    return response.json() as Promise<T>;
+  } catch (error) {
+    logClientEvent("error", "web.api.request.error", {
+      method,
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
-
-  return response.json() as Promise<T>;
 }
 
 export function getAccountStatus() {

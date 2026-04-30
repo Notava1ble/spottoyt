@@ -14,6 +14,7 @@ import {
   matchConversion,
   resetImport,
 } from "../lib/apiClient";
+import { logClientEvent } from "../lib/logger";
 
 export function ConvertPage() {
   const [liveConversion, setLiveConversion] = useState<ConversionJob | null>(
@@ -32,16 +33,44 @@ export function ConvertPage() {
   const youtubeMusic = accountStatus.data?.youtubeMusic;
   const match = useMutation({
     mutationFn: (id: string) => matchConversion(id),
+    onMutate: (id) => {
+      logClientEvent("info", "web.conversion.match.clicked", {
+        conversionId: id,
+      });
+    },
     onSuccess: (response) => {
+      logClientEvent("info", "web.conversion.match.completed", {
+        conversionId: response.conversion.id,
+        status: response.conversion.status,
+        matchCount: response.conversion.matches.length,
+      });
       setLiveConversion(response.conversion);
       void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
+    },
+    onError: (error) => {
+      logClientEvent("error", "web.conversion.match.failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
     },
   });
   const reset = useMutation({
     mutationFn: resetImport,
+    onMutate: () => {
+      logClientEvent("info", "web.import.reset.clicked", {
+        conversionId: conversion?.id,
+      });
+    },
     onSuccess: () => {
+      logClientEvent("info", "web.import.reset.completed", {
+        conversionId: conversion?.id,
+      });
       setLiveConversion(null);
       void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
+    },
+    onError: (error) => {
+      logClientEvent("error", "web.import.reset.failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
     },
   });
   const locked = conversion
@@ -49,19 +78,50 @@ export function ConvertPage() {
     : false;
 
   useEffect(() => {
+    if (accountStatus.error) {
+      logClientEvent("error", "web.query.account_status.failed", {
+        message: accountStatus.error.message,
+      });
+    }
+  }, [accountStatus.error]);
+
+  useEffect(() => {
+    if (latestImport.error) {
+      logClientEvent("error", "web.query.latest_import.failed", {
+        message: latestImport.error.message,
+      });
+    }
+  }, [latestImport.error]);
+
+  useEffect(() => {
     if (!("EventSource" in window)) {
+      logClientEvent("warn", "web.sse.unavailable");
       return;
     }
 
-    const events = new EventSource(getEventsUrl());
+    const eventsUrl = getEventsUrl();
+    logClientEvent("info", "web.sse.opening", { url: eventsUrl });
+    const events = new EventSource(eventsUrl);
+    events.onopen = () => {
+      logClientEvent("info", "web.sse.connected");
+    };
+    events.onerror = () => {
+      logClientEvent("warn", "web.sse.error");
+    };
     events.addEventListener("spicetify-imported", () => {
+      logClientEvent("info", "web.sse.spicetify_imported");
       void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
       void getLatestImport().then((response) => {
+        logClientEvent("info", "web.import.live_conversion.loaded", {
+          conversionId: response.conversion?.id,
+          status: response.conversion?.status,
+        });
         setLiveConversion(response.conversion);
       });
     });
 
     return () => {
+      logClientEvent("info", "web.sse.closed");
       events.close();
     };
   }, [queryClient]);

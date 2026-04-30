@@ -5,6 +5,7 @@ import { Card } from "@spottoyt/ui/components/card";
 import { Check, CircleSlash, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatConfidence, formatDuration } from "../../lib/formatters";
+import { logClientEvent } from "../../lib/logger";
 
 type MatchReviewTableProps = {
   conversion?: ConversionJob | null;
@@ -23,7 +24,14 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
     return null;
   }
 
+  const conversionId = conversion.id;
+
   function updateDecision(trackId: string, status: MatchDecision["status"]) {
+    logClientEvent("info", "web.decision.changed", {
+      conversionId,
+      trackId,
+      status,
+    });
     setMatches((current) =>
       current.map((match) =>
         match.trackId === trackId ? { ...match, status } : match,
