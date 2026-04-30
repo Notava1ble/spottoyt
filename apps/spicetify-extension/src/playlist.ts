@@ -37,6 +37,21 @@ export type NormalizedPlaylistTrack = {
   position: number;
 };
 
+export type PlaylistMetadata = {
+  name?: string;
+  uri?: string;
+};
+
+export function normalizePlaylistMetadata(
+  metadata: PlaylistMetadata,
+  playlistId: string,
+) {
+  return {
+    name: metadata.name?.trim() || "Spotify playlist",
+    uri: metadata.uri?.trim() || `spotify:playlist:${playlistId}`,
+  };
+}
+
 export function getPlaylistIdFromUri(uri: string) {
   const segments = uri.split(":");
   const playlistIndex = segments.findIndex(

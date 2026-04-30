@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   getPlaylistIdFromUri,
+  normalizePlaylistMetadata,
   normalizePlaylistContents,
   shouldShowPlaylistExtract,
 } from "./playlist";
@@ -14,6 +15,20 @@ describe("Spicetify playlist helpers", () => {
       getPlaylistIdFromUri("spotify:user:alice:playlist:37i9dQZF1DWXRqgorJj26U"),
     ).toBe("37i9dQZF1DWXRqgorJj26U");
     expect(getPlaylistIdFromUri("spotify:album:2noRn2Aes5aoNVsU6iWThc")).toBeNull();
+  });
+
+  it("falls back to the selected playlist id when metadata omits the URI", () => {
+    expect(
+      normalizePlaylistMetadata(
+        {
+          name: "Road trip",
+        },
+        "37i9dQZF1DXcBWIGoYBM5M",
+      ),
+    ).toEqual({
+      name: "Road trip",
+      uri: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    });
   });
 
   it("only shows extract for one playlist context menu target", () => {

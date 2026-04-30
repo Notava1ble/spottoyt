@@ -1,5 +1,6 @@
 import {
   getPlaylistIdFromUri,
+  normalizePlaylistMetadata,
   normalizePlaylistContents,
   type PlaylistContentItem,
   shouldShowPlaylistExtract,
@@ -10,8 +11,8 @@ const API_URL_STORAGE_KEY = "spottoyt-api-url";
 const SPOTIFY_PLAYLIST_PATH = /\/playlist\/([A-Za-z0-9]+)/;
 
 type SpotifyPlaylistResponse = {
-  name: string;
-  uri: string;
+  name?: string;
+  uri?: string;
 };
 
 type SpicetifySnapshot = {
@@ -141,11 +142,12 @@ async function readPlaylistSnapshot(
   const playlist = await cosmos.get<SpotifyPlaylistResponse>(
     `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,uri`,
   );
+  const metadata = normalizePlaylistMetadata(playlist, playlistId);
 
   return {
     source: "spicetify",
-    spotifyPlaylistUri: playlist.uri,
-    playlistName: playlist.name,
+    spotifyPlaylistUri: metadata.uri,
+    playlistName: metadata.name,
     snapshotAt: new Date().toISOString(),
     tracks: await readPlaylistTracks(playlistId),
   };
