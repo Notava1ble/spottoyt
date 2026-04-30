@@ -12,6 +12,13 @@ import {
   ConversionService,
   ImportLockedError,
 } from "./services/conversion.service";
+import { env } from "./config/env";
+import { registerClientLogRoutes } from "./logging/client-log.routes";
+import {
+  createApiLoggerOptions,
+  createLogEventWriter,
+  type LogEventWriter,
+} from "./logging/logger";
 import { ImportEventsService } from "./services/import-events.service";
 import { YtmusicWorkerUnavailableError } from "./services/ytmusic.service";
 import { getDatabaseStatus } from "./storage/db";
@@ -21,6 +28,7 @@ type SpicetifyImportBody = unknown;
 
 type AppDependencies = {
   conversions?: ConversionService;
+  logEvent?: LogEventWriter;
 };
 
 const conversionParamsSchema = {
@@ -77,16 +85,54 @@ export function buildApp(
   options: FastifyServerOptions = {},
   dependencies: AppDependencies = {},
 ) {
+  const logger =
+    options.logger === undefined ? createApiLoggerOptions(env) : options.logger;
   const app = Fastify({
-    logger: true,
+    disableRequestLogging: true,
+    logger,
     ...options,
   });
+  const logEvent =
+    dependencies.logEvent ?? createLogEventWriter(app.log || false);
   const conversions = dependencies.conversions ?? new ConversionService();
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
     origin: true,
   });
+
+  app.addHook("onRequest", async (request) => {
+    logEvent("info", "api", "api.request.started", {
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+    });
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    logEvent("info", "api", "api.request.completed", {
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+      statusCode: reply.statusCode,
+      durationMs: Math.round(reply.elapsedTime),
+    });
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    logEvent("error", "api", "api.request.failed", {
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    reply.send(error);
+  });
+
+  registerClientLogRoutes(app, logEvent);
 
   app.get("/health", async () => ({
     status: "ok",

@@ -228,7 +228,18 @@ describe("api shell", () => {
   });
 
   it("blocks replacing a matched import until the import is reset", async () => {
-    const app = buildApp({ logger: false });
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks() {
+              return [];
+            },
+          }),
+        ),
+      },
+    );
     await app.ready();
 
     const imported = await app.inject({
@@ -263,6 +274,43 @@ describe("api shell", () => {
     expect(replacement.json().conversion.sourcePlaylistName).toBe(
       "Gym rotation",
     );
+
+    await app.close();
+  });
+
+  it("accepts structured client log events", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/logs/client",
+      payload: {
+        level: "info",
+        event: "web.api.request.started",
+        fields: { path: "/auth/status", token: "secret" },
+        message: "Client request started",
+      },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ ok: true });
+
+    await app.close();
+  });
+
+  it("rejects malformed client log events", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/logs/client",
+      payload: { level: "loud", event: "" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("Invalid client log event");
 
     await app.close();
   });
