@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from typing import Any
 
 try:
@@ -36,6 +37,9 @@ def normalize_result(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    started_at = time.perf_counter()
+    log_event("ytmusic.worker.command.started", trackCount=len(tracks), limit=limit)
+
     if YTMusic is None:
         raise RuntimeError("Install ytmusicapi before matching.")
 
@@ -49,7 +53,7 @@ def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any
         primary_artist = artists[0] if artists else ""
         query = " ".join(part for part in [title, primary_artist] if part)
 
-        log_event("search-start", trackId=track_id, query=query, limit=limit)
+        log_event("ytmusic.search.started", trackId=track_id, query=query, limit=limit)
 
         try:
             results = client.search(
@@ -63,23 +67,29 @@ def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any
                 if normalized is not None
             ]
             log_event(
-                "search-complete",
+                "ytmusic.search.completed",
                 trackId=track_id,
                 rawResults=len(results),
-                candidates=len(candidates),
+                candidateCount=len(candidates),
             )
             if not candidates:
                 candidates = search_youtube_videos(query, primary_artist, limit)
                 log_event(
-                    "youtube-fallback-complete",
+                    "ytmusic.youtube_fallback.completed",
                     trackId=track_id,
-                    candidates=len(candidates),
+                    candidateCount=len(candidates),
                 )
         except Exception as error:
-            log_event("search-error", trackId=track_id, message=str(error))
+            log_event("ytmusic.search.failed", trackId=track_id, message=str(error))
             candidates = []
 
         matches.append({"trackId": track_id, "candidates": candidates})
+
+    log_event(
+        "ytmusic.worker.command.completed",
+        trackCount=len(tracks),
+        durationMs=round((time.perf_counter() - started_at) * 1000),
+    )
 
     return matches
 
@@ -114,7 +124,7 @@ def search_youtube_videos(
     limit: int,
 ) -> list[dict[str, Any]]:
     if YoutubeDL is None:
-        log_event("youtube-fallback-unavailable", reason="Install yt-dlp.")
+        log_event("ytmusic.youtube_fallback.unavailable", reason="Install yt-dlp.")
         return []
 
     try:
@@ -124,7 +134,7 @@ def search_youtube_videos(
                 download=False,
             )
     except Exception as error:
-        log_event("youtube-fallback-error", message=str(error))
+        log_event("ytmusic.youtube_fallback.failed", message=str(error))
         return []
 
     candidates: list[dict[str, Any]] = []

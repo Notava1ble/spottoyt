@@ -204,6 +204,30 @@ class YtmusicWorkerTest(unittest.TestCase):
             ignore_spelling=False,
         )
 
+    @patch("main.YTMusic")
+    def test_match_tracks_emits_structured_diagnostics(self, ytmusic):
+        client = Mock()
+        client.search.return_value = []
+        ytmusic.return_value = client
+
+        with patch("main.log_event") as log_event:
+            match_tracks(
+                [
+                    {
+                        "id": "spotify:track:midnight-city",
+                        "title": "Midnight City",
+                        "artists": ["M83"],
+                    }
+                ],
+                limit=5,
+            )
+
+        event_names = [call.args[0] for call in log_event.call_args_list]
+        self.assertIn("ytmusic.worker.command.started", event_names)
+        self.assertIn("ytmusic.search.started", event_names)
+        self.assertIn("ytmusic.search.completed", event_names)
+        self.assertIn("ytmusic.worker.command.completed", event_names)
+
     @patch("main.YTMusic", None)
     def test_match_tracks_reports_missing_ytmusicapi(self):
         with self.assertRaisesRegex(RuntimeError, "Install ytmusicapi"):

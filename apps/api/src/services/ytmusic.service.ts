@@ -10,6 +10,11 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { platform } from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  type LogEventWriter,
+  noopLogEvent,
+} from "../logging/logger";
+import { parseWorkerDiagnostics } from "../logging/worker-diagnostics";
 
 export type YtmusicCandidateSearchResult = {
   trackId: string;
@@ -25,9 +30,15 @@ export type YtmusicSearchClient = {
 const searchLimit = 5;
 
 export class YtmusicService {
+  private readonly searchClient: YtmusicSearchClient;
+
   constructor(
-    private readonly searchClient: YtmusicSearchClient = new PythonYtmusicSearchClient(),
-  ) {}
+    searchClient?: YtmusicSearchClient,
+    private readonly logEvent: LogEventWriter = noopLogEvent,
+  ) {
+    this.searchClient =
+      searchClient ?? new PythonYtmusicSearchClient(undefined, this.logEvent);
+  }
 
   async findMockMatches(): Promise<MatchDecision[]> {
     return matchDecisionSchema.array().parse(mockConversionJob.matches);
@@ -37,14 +48,35 @@ export class YtmusicService {
     const searchResults = await this.searchClient.findCandidatesForTracks(
       tracks,
     );
+    this.logEvent("info", "api", "conversion.match.worker_results_received", {
+      trackCount: tracks.length,
+      resultCount: searchResults.length,
+    });
     const candidatesByTrackId = new Map(
       searchResults.map((result) => [result.trackId, result.candidates]),
     );
 
     return matchDecisionSchema.array().parse(
-      tracks.map((track) =>
-        decideMatch(track, candidatesByTrackId.get(track.id) ?? []),
-      ),
+      tracks.map((track) => {
+        const decision = decideMatch(
+          track,
+          candidatesByTrackId.get(track.id) ?? [],
+        );
+
+        this.logEvent(
+          decision.status === "accepted" ? "debug" : "info",
+          "api",
+          "conversion.match.decision",
+          {
+            trackId: track.id,
+            status: decision.status,
+            confidence: decision.confidence,
+            candidateVideoId: decision.candidate?.videoId,
+          },
+        );
+
+        return decision;
+      }),
     );
   }
 
@@ -57,7 +89,10 @@ export class YtmusicService {
 }
 
 export class PythonYtmusicSearchClient implements YtmusicSearchClient {
-  constructor(private readonly pythonCommand = getDefaultPythonCommand()) {}
+  constructor(
+    private readonly pythonCommand = getDefaultPythonCommand(),
+    private readonly logEvent: LogEventWriter = noopLogEvent,
+  ) {}
 
   async findCandidatesForTracks(
     tracks: SpotifyTrack[],
@@ -67,7 +102,7 @@ export class PythonYtmusicSearchClient implements YtmusicSearchClient {
     return runWorker(this.pythonCommand, workerPath, {
       limit: searchLimit,
       tracks,
-    });
+    }, this.logEvent);
   }
 }
 
@@ -192,8 +227,14 @@ async function runWorker(
   pythonCommand: string,
   workerPath: string,
   payload: { limit: number; tracks: SpotifyTrack[] },
+  logEvent: LogEventWriter,
 ): Promise<YtmusicCandidateSearchResult[]> {
   return new Promise((resolvePromise, reject) => {
+    logEvent("info", "api", "ytmusic.worker.spawned", {
+      workerPath,
+      trackCount: payload.tracks.length,
+      limit: payload.limit,
+    });
     const child = spawn(pythonCommand, [workerPath, "match"], {
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -210,7 +251,16 @@ async function runWorker(
       );
     });
     child.on("close", (code) => {
-      const errorOutput = Buffer.concat(stderr).toString("utf8").trim();
+      const stderrOutput = Buffer.concat(stderr);
+      const errorOutput = stderrOutput.toString("utf8").trim();
+      logEvent("info", "api", "ytmusic.worker.exited", {
+        exitCode: code,
+        stderrBytes: stderrOutput.byteLength,
+      });
+
+      for (const diagnostic of parseWorkerDiagnostics(errorOutput)) {
+        logEvent("debug", "ytmusic-worker", diagnostic.event, diagnostic.fields);
+      }
 
       if (code !== 0) {
         reject(
@@ -223,7 +273,6 @@ async function runWorker(
       }
 
       try {
-        logWorkerDiagnostics(errorOutput);
         resolvePromise(
           parseWorkerResults(Buffer.concat(stdout).toString("utf8")),
         );
@@ -244,12 +293,6 @@ async function runWorker(
 
 function getWorkerDirectory() {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../ytmusic-worker");
-}
-
-function logWorkerDiagnostics(diagnostics: string) {
-  if (diagnostics) {
-    console.info(diagnostics);
-  }
 }
 
 function parseWorkerResults(output: string): YtmusicCandidateSearchResult[] {
