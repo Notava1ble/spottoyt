@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import {
   accountStatusResponseSchema,
+  type ConversionJob,
   latestImportResponseSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
@@ -141,7 +142,7 @@ export function buildApp(options: FastifyServerOptions = {}) {
         };
       }
 
-      let conversion;
+      let conversion: ConversionJob;
       try {
         conversion = conversions.importSpicetifySnapshot(parsed.data);
       } catch (error) {

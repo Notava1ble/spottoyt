@@ -36,10 +36,8 @@ packages/ui         Shared shadcn components and Tailwind theme tokens
 
 ## Spotify Import
 
-Spotify Web API OAuth is deprecated for this project because Spotify now gates
-Development Mode apps behind Premium ownership. The preferred path is the
-Spicetify extension in `apps/spicetify-extension`, which pushes the currently
-open Spotify desktop playlist to the local API and updates the website through
+The Spicetify extension in `apps/spicetify-extension` pushes the currently open
+Spotify desktop playlist to the local API and updates the website through
 server-sent events.
 
 See `docs/spicetify-extension.md` for local setup.

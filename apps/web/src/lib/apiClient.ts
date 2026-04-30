@@ -1,5 +1,6 @@
 import type {
   AccountStatusResponse,
+  ConversionJob,
   LatestImportResponse,
 } from "@spottoyt/shared";
 
@@ -39,10 +40,18 @@ export function getEventsUrl() {
   return `${apiUrl}/events`;
 }
 
-export function getSpotifyLoginUrl() {
-  return `${apiUrl}/auth/spotify/login`;
+export function matchConversion(id: string) {
+  return apiPost<{
+    conversion: ConversionJob;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(`/conversions/${id}/match`);
 }
 
-export function logoutSpotify() {
-  return apiPost<{ ok: boolean }>("/auth/spotify/logout");
+export function resetImport() {
+  return apiPost<{ ok: boolean }>("/imports/reset");
 }

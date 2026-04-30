@@ -1,17 +1,35 @@
-import type { ConversionJob } from "@spottoyt/shared";
+import type { ConversionJob, MatchDecision } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
 import { Card } from "@spottoyt/ui/components/card";
 import { Check, CircleSlash, Search } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatConfidence, formatDuration } from "../../lib/formatters";
-import { shellConversion } from "../../lib/mockData";
 
 type MatchReviewTableProps = {
   conversion?: ConversionJob | null;
 };
 
 export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
-  const activeConversion = conversion ?? shellConversion;
+  const [matches, setMatches] = useState<MatchDecision[]>(
+    () => conversion?.matches ?? [],
+  );
+
+  useEffect(() => {
+    setMatches(conversion?.matches ?? []);
+  }, [conversion]);
+
+  if (!conversion) {
+    return null;
+  }
+
+  function updateDecision(trackId: string, status: MatchDecision["status"]) {
+    setMatches((current) =>
+      current.map((match) =>
+        match.trackId === trackId ? { ...match, status } : match,
+      ),
+    );
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -22,10 +40,8 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
         <span className="text-right">Decision</span>
       </div>
       <div className="overflow-x-auto">
-        {activeConversion.tracks.map((track) => {
-          const match = activeConversion.matches.find(
-            (item) => item.trackId === track.id,
-          );
+        {conversion.tracks.map((track) => {
+          const match = matches.find((item) => item.trackId === track.id);
           const variant =
             match && match.confidence > 0.9 ? "default" : "secondary";
 
@@ -37,7 +53,8 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
               <div>
                 <p className="font-medium text-foreground">{track.title}</p>
                 <p className="text-muted-foreground text-sm">
-                  {track.artists.join(", ")} - {formatDuration(track.durationMs)}
+                  {track.artists.join(", ")} -{" "}
+                  {formatDuration(track.durationMs)}
                 </p>
               </div>
               <div>
@@ -69,14 +86,18 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                 <Button
                   aria-label="Accept match"
                   disabled={!match}
+                  onClick={() => updateDecision(track.id, "accepted")}
                   size="icon"
-                  variant="secondary"
+                  variant={
+                    match?.status === "accepted" ? "default" : "secondary"
+                  }
                 >
                   <Check data-icon="inline-start" aria-hidden="true" />
                 </Button>
                 <Button
                   aria-label="Search replacement"
                   disabled={!match}
+                  onClick={() => updateDecision(track.id, "review")}
                   size="icon"
                   variant="ghost"
                 >
@@ -85,8 +106,9 @@ export function MatchReviewTable({ conversion }: MatchReviewTableProps) {
                 <Button
                   aria-label="Skip track"
                   disabled={!match}
+                  onClick={() => updateDecision(track.id, "skipped")}
                   size="icon"
-                  variant="ghost"
+                  variant={match?.status === "skipped" ? "secondary" : "ghost"}
                 >
                   <CircleSlash data-icon="inline-start" aria-hidden="true" />
                 </Button>

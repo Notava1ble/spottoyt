@@ -16,14 +16,12 @@ The preferred top-level navigation is:
 
 Convert is the main workspace for starting a new Spotify to YouTube Music conversion.
 
-The page should first check whether Spotify desktop bridge input and YouTube Music access are ready. If one is missing, show a setup gate or compact account prompts. Spotify Web API OAuth is deprecated for now because Development Mode access requires Premium ownership.
+The page should first check whether Spotify desktop bridge input and YouTube Music access are ready. If one is missing, show a setup gate or compact account prompts.
 
 Playlist selection should primarily support:
 
 - pushing the currently open Spotify desktop playlist through the Spicetify extension
 - later, importing Spotify export files or CSV/TSV snapshots
-
-Playlist selection may keep Spotify Web API routes as compatibility-only backend code, but the main UI should not rely on authenticated Spotify playlist picking.
 
 After a playlist is chosen, the flow can move linearly through a small number of stages such as selecting/importing, reviewing matches, confirming, creating, and completion. The user does not need free navigation between all stages. If they want to change the source playlist or restart the process, a reset action is enough.
 
@@ -58,4 +56,4 @@ Do not make this a required part of the normal conversion path until the rest of
 
 ## Settings
 
-Settings owns authentication and local configuration. This includes Spicetify extension endpoints, deprecated Spotify Web API notes, YouTube Music auth/configuration, local database paths, and future matching or sync preferences.
+Settings owns authentication and local configuration. This includes Spicetify extension endpoints, YouTube Music auth/configuration, local database paths, and future matching or sync preferences.

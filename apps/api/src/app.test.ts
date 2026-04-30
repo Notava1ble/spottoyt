@@ -55,37 +55,6 @@ describe("api shell", () => {
     await app.close();
   });
 
-  it("does not expose Spotify Web API routes", async () => {
-    const app = buildApp({ logger: false });
-    await app.ready();
-
-    const login = await app.inject({ method: "GET", url: "/auth/spotify/login" });
-    const callback = await app.inject({
-      method: "GET",
-      url: "/auth/spotify/callback?code=abc&state=state",
-    });
-    const logout = await app.inject({
-      method: "POST",
-      url: "/auth/spotify/logout",
-    });
-    const playlists = await app.inject({ method: "GET", url: "/spotify/playlists" });
-    const importByUrl = await app.inject({
-      method: "POST",
-      url: "/playlists/import",
-      payload: {
-        playlistUrl: "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
-      },
-    });
-
-    expect(login.statusCode).toBe(404);
-    expect(callback.statusCode).toBe(404);
-    expect(logout.statusCode).toBe(404);
-    expect(playlists.statusCode).toBe(404);
-    expect(importByUrl.statusCode).toBe(404);
-
-    await app.close();
-  });
-
   it("imports Spicetify playlist snapshots and exposes the latest import", async () => {
     const app = buildApp({ logger: false });
     await app.ready();

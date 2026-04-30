@@ -1,4 +1,3 @@
-import { Badge } from "@spottoyt/ui/components/badge";
 import {
   Card,
   CardContent,
@@ -19,8 +18,8 @@ export function SettingsPage() {
       <div>
         <h1 className="font-semibold text-3xl text-foreground">Settings</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Local paths and callback URLs stay explicit so credentials are easy to
-          audit.
+          Local paths and bridge endpoints stay explicit so credentials are easy
+          to audit.
         </p>
       </div>
       <Card>
@@ -35,7 +34,9 @@ export function SettingsPage() {
               </span>
               <p className="font-medium text-foreground">Spicetify bridge</p>
             </div>
-            <Badge variant="secondary">Web API deprecated</Badge>
+            <span className="font-medium text-muted-foreground text-sm">
+              Desktop context menu
+            </span>
           </div>
           {settings.map(([label, value]) => (
             <div

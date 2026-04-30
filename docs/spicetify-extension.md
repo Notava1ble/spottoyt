@@ -1,9 +1,8 @@
 # Spicetify Extension Import
 
-SpottoYT now treats Spotify Web API OAuth as deprecated. The primary local import
-path is a Spicetify extension that runs inside Spotify desktop, reads the open
-playlist through the desktop session, and posts normalized track metadata to the
-local API.
+SpottoYT imports through a Spicetify extension that runs inside Spotify desktop,
+reads the open playlist through the desktop session, and posts normalized track
+metadata to the local API.
 
 ## Workflow
 
@@ -13,7 +12,7 @@ local API.
 4. Right-click the playlist and choose `Extract to SpottoYT`.
 5. The extension posts the playlist snapshot to
    `http://127.0.0.1:4317/imports/spicetify`.
-6. The web app listens to `http://127.0.0.1:4317/events` and moves to review
+6. The web app listens to `http://127.0.0.1:4317/events` and shows the playlist
    when the import arrives.
 
 The extension sends playlist metadata only: playlist URI/name, snapshot time,
