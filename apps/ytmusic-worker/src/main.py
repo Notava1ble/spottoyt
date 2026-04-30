@@ -41,9 +41,18 @@ def normalize_result(result: dict[str, Any]) -> dict[str, Any] | None:
     return candidate
 
 
-def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+def match_tracks(
+    tracks: list[dict[str, Any]],
+    limit: int,
+    include_videos: bool = True,
+) -> list[dict[str, Any]]:
     started_at = time.perf_counter()
-    log_event("ytmusic.worker.command.started", trackCount=len(tracks), limit=limit)
+    log_event(
+        "ytmusic.worker.command.started",
+        trackCount=len(tracks),
+        limit=limit,
+        includeVideos=include_videos,
+    )
 
     if YTMusic is None:
         raise RuntimeError("Install ytmusicapi before matching.")
@@ -56,37 +65,65 @@ def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any
         title = track.get("title", "")
         artists = track.get("artists") or []
         primary_artist = artists[0] if artists else ""
-        query = " ".join(part for part in [title, primary_artist] if part)
+        queries = build_search_queries(title, artists, include_videos)
+        query_limit = max(1, min(limit, (limit + 1) // 2))
+        candidates: list[dict[str, Any]] = []
+        seen_video_ids: set[str] = set()
 
-        log_event("ytmusic.search.started", trackId=track_id, query=query, limit=limit)
-
-        try:
-            results = client.search(
-                query,
-                limit=limit,
-                ignore_spelling=False,
+        for query, result_filter in queries:
+            log_event(
+                "ytmusic.search.started",
+                trackId=track_id,
+                query=query,
+                filter=result_filter,
+                limit=query_limit,
             )
-            candidates = [
-                normalized
-                for normalized in (normalize_result(result) for result in results)
-                if normalized is not None
-            ]
+
+            try:
+                results = client.search(
+                    query,
+                    filter=result_filter,
+                    limit=query_limit,
+                    ignore_spelling=False,
+                )
+            except Exception as error:
+                log_event("ytmusic.search.failed", trackId=track_id, message=str(error))
+                break
+
+            before_count = len(candidates)
+
+            for result in results:
+                normalized = normalize_result(result)
+
+                if normalized is None or normalized["videoId"] in seen_video_ids:
+                    continue
+
+                seen_video_ids.add(normalized["videoId"])
+                candidates.append(normalized)
+
+                if len(candidates) >= limit:
+                    break
+
             log_event(
                 "ytmusic.search.completed",
                 trackId=track_id,
+                query=query,
+                filter=result_filter,
                 rawResults=len(results),
+                candidateCount=len(candidates) - before_count,
+            )
+
+            if len(candidates) >= limit:
+                break
+
+        if not candidates and include_videos:
+            fallback_query = " ".join(part for part in [title, primary_artist] if part)
+            candidates = search_youtube_videos(fallback_query, primary_artist, limit)
+            log_event(
+                "ytmusic.youtube_fallback.completed",
+                trackId=track_id,
                 candidateCount=len(candidates),
             )
-            if not candidates:
-                candidates = search_youtube_videos(query, primary_artist, limit)
-                log_event(
-                    "ytmusic.youtube_fallback.completed",
-                    trackId=track_id,
-                    candidateCount=len(candidates),
-                )
-        except Exception as error:
-            log_event("ytmusic.search.failed", trackId=track_id, message=str(error))
-            candidates = []
 
         matches.append({"trackId": track_id, "candidates": candidates})
 
@@ -97,6 +134,45 @@ def match_tracks(tracks: list[dict[str, Any]], limit: int) -> list[dict[str, Any
     )
 
     return matches
+
+
+def build_search_queries(
+    title: str,
+    artists: list[str],
+    include_videos: bool,
+) -> list[tuple[str, str]]:
+    primary_artist = artists[0] if artists else ""
+    all_artists = " ".join(artists)
+    song_queries = [
+        " ".join(part for part in [title, all_artists] if part),
+        " ".join(part for part in [title, primary_artist] if part),
+        title,
+    ]
+    video_queries = [
+        " ".join(part for part in [title, primary_artist, "official audio"] if part),
+        " ".join(part for part in [title, primary_artist, "lyrics"] if part),
+    ]
+    queries = [(query, "songs") for query in song_queries]
+
+    if include_videos:
+        queries.extend((query, "videos") for query in video_queries)
+
+    deduped_queries: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for query, result_filter in queries:
+        compact_query = " ".join(query.split())
+
+        if not compact_query:
+            continue
+
+        key = (compact_query, result_filter)
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped_queries.append(key)
+
+    return deduped_queries
 
 
 def normalize_artists(artists: Any) -> list[str]:
@@ -180,7 +256,11 @@ def main() -> None:
         raise SystemExit("Usage: python src/main.py match")
 
     payload = json.load(sys.stdin)
-    matches = match_tracks(payload.get("tracks", []), int(payload.get("limit", 5)))
+    matches = match_tracks(
+        payload.get("tracks", []),
+        int(payload.get("limit", 5)),
+        bool(payload.get("includeVideos", True)),
+    )
     print(json.dumps(matches))
 
 

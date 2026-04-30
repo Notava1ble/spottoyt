@@ -1,4 +1,5 @@
 import {
+  type MatchingSettings,
   type MatchDecision,
   matchDecisionSchema,
   mockConversionJob,
@@ -15,19 +16,64 @@ import {
   noopLogEvent,
 } from "../logging/logger";
 import { parseWorkerDiagnostics } from "../logging/worker-diagnostics";
+import {
+  defaultMatchingSettings,
+  MatchingSettingsService,
+} from "./matching-settings.service";
 
 export type YtmusicCandidateSearchResult = {
   trackId: string;
   candidates: YtmusicCandidate[];
 };
 
+export type YtmusicSearchOptions = {
+  searchLimit: number;
+  includeVideos: boolean;
+};
+
 export type YtmusicSearchClient = {
   findCandidatesForTracks(
     tracks: SpotifyTrack[],
+    options?: YtmusicSearchOptions,
   ): Promise<YtmusicCandidateSearchResult[]>;
 };
 
-const searchLimit = 5;
+type MatchingSettingsProvider = {
+  getSettings(): MatchingSettings;
+};
+
+const benignVideoTitleTokens = new Set([
+  "official",
+  "audio",
+  "video",
+  "music",
+  "lyrics",
+  "lyric",
+  "visualizer",
+  "visualiser",
+  "hq",
+  "hd",
+  "explicit",
+  "clean",
+  "remaster",
+  "remastered",
+  "remastered",
+]);
+const editionTokens = new Set([
+  "acoustic",
+  "cover",
+  "edit",
+  "extended",
+  "instrumental",
+  "karaoke",
+  "live",
+  "mashup",
+  "nightcore",
+  "remix",
+  "reverb",
+  "slowed",
+  "sped",
+]);
 
 export class YtmusicService {
   private readonly searchClient: YtmusicSearchClient;
@@ -35,6 +81,8 @@ export class YtmusicService {
   constructor(
     searchClient?: YtmusicSearchClient,
     private readonly logEvent: LogEventWriter = noopLogEvent,
+    private readonly matchingSettings: MatchingSettingsProvider =
+      new MatchingSettingsService(),
   ) {
     this.searchClient =
       searchClient ?? new PythonYtmusicSearchClient(undefined, this.logEvent);
@@ -45,8 +93,14 @@ export class YtmusicService {
   }
 
   async findMatchesForTracks(tracks: SpotifyTrack[]): Promise<MatchDecision[]> {
+    const settings = this.matchingSettings.getSettings();
+    const searchOptions = {
+      includeVideos: settings.includeVideos,
+      searchLimit: settings.searchLimit,
+    };
     const searchResults = await this.searchClient.findCandidatesForTracks(
       tracks,
+      searchOptions,
     );
     this.logEvent("info", "api", "conversion.match.worker_results_received", {
       trackCount: tracks.length,
@@ -61,6 +115,7 @@ export class YtmusicService {
         const decision = decideMatch(
           track,
           candidatesByTrackId.get(track.id) ?? [],
+          settings,
         );
 
         this.logEvent(
@@ -96,11 +151,16 @@ export class PythonYtmusicSearchClient implements YtmusicSearchClient {
 
   async findCandidatesForTracks(
     tracks: SpotifyTrack[],
+    options: YtmusicSearchOptions = {
+      includeVideos: defaultMatchingSettings.includeVideos,
+      searchLimit: defaultMatchingSettings.searchLimit,
+    },
   ): Promise<YtmusicCandidateSearchResult[]> {
     const workerPath = join(getWorkerDirectory(), "src", "main.py");
 
     return runWorker(this.pythonCommand, workerPath, {
-      limit: searchLimit,
+      includeVideos: options.includeVideos,
+      limit: options.searchLimit,
       tracks,
     }, this.logEvent);
   }
@@ -133,6 +193,7 @@ export function getDefaultPythonCommand(
 function decideMatch(
   track: SpotifyTrack,
   candidates: YtmusicCandidate[],
+  settings: MatchingSettings = defaultMatchingSettings,
 ): MatchDecision {
   if (candidates.length === 0) {
     return {
@@ -150,8 +211,9 @@ function decideMatch(
     }))
     .sort((left, right) => right.confidence - left.confidence);
   const best = scored[0];
+  const second = scored[1];
 
-  if (!best || best.confidence < 0.7) {
+  if (!best || best.confidence < settings.reviewThreshold) {
     return {
       trackId: track.id,
       candidate: null,
@@ -164,50 +226,39 @@ function decideMatch(
     trackId: track.id,
     candidate: best.candidate,
     confidence: roundConfidence(best.confidence),
-    status: best.confidence >= 0.93 ? "accepted" : "review",
+    status:
+      best.confidence >= settings.autoAcceptThreshold &&
+      isClearWinner(best.confidence, second?.confidence)
+        ? "accepted"
+        : "review",
   };
 }
 
 function scoreCandidate(track: SpotifyTrack, candidate: YtmusicCandidate) {
-  let score = 0;
-  const trackTitle = normalizeText(track.title);
-  const candidateTitle = normalizeText(candidate.title);
-  const primaryArtist = normalizeText(track.artists[0] ?? "");
-  const candidateArtists = candidate.artists.map(normalizeText);
+  const title = scoreTitle(track, candidate);
+  const artist = scoreArtist(track, candidate);
+  const duration = scoreDuration(track.durationMs, candidate.durationMs);
+  const resultType = scoreResultType(candidate);
+  const album = scoreAlbum(track, candidate);
+  const penalty = scoreEditionPenalty(track.title, candidate.title);
+  let confidence =
+    title * 0.47 +
+    artist * 0.25 +
+    duration * 0.18 +
+    resultType * 0.06 +
+    album * 0.04;
 
-  if (candidateTitle === trackTitle) {
-    score += 0.45;
-  } else if (
-    candidateTitle.includes(trackTitle) ||
-    trackTitle.includes(candidateTitle)
-  ) {
-    score += 0.35;
+  confidence *= penalty;
+
+  if (title < 0.55) {
+    confidence = Math.min(confidence, 0.55);
   }
 
-  if (candidateArtists.includes(primaryArtist)) {
-    score += 0.35;
+  if (artist < 0.35 && candidate.resultType === "video") {
+    confidence = Math.min(confidence, 0.84);
   }
 
-  if (
-    candidate.album &&
-    track.album !== "Unknown album" &&
-    normalizeText(candidate.album) === normalizeText(track.album)
-  ) {
-    score += 0.1;
-  }
-
-  const durationDelta = Math.abs(track.durationMs - candidate.durationMs);
-  if (durationDelta <= 2000) {
-    score += 0.08;
-  } else if (durationDelta <= 10000) {
-    score += 0.05;
-  }
-
-  if (candidate.resultType === "song") {
-    score += 0.2;
-  }
-
-  return Math.min(score, 1);
+  return clamp(confidence, 0, 1);
 }
 
 function normalizeText(value: string) {
@@ -219,6 +270,171 @@ function normalizeText(value: string) {
     .trim();
 }
 
+function scoreTitle(track: SpotifyTrack, candidate: YtmusicCandidate) {
+  const trackTitle = normalizeSongTitle(track.title);
+  const candidateTitle = normalizeSongTitle(candidate.title);
+  const trackTokens = tokenize(trackTitle);
+  const candidateTokens = tokenize(candidateTitle);
+
+  if (trackTokens.length === 0 || candidateTokens.length === 0) {
+    return 0;
+  }
+
+  if (candidateTitle === trackTitle) {
+    return 1;
+  }
+
+  if (candidateTitle.includes(trackTitle)) {
+    return 0.98;
+  }
+
+  const shared = intersectionCount(trackTokens, candidateTokens);
+  const containment = shared / trackTokens.length;
+  const dice = (shared * 2) / (trackTokens.length + candidateTokens.length);
+
+  if (containment >= 0.95) {
+    return 0.96;
+  }
+
+  if (containment >= 0.75) {
+    return Math.max(0.86, dice);
+  }
+
+  return Math.max(dice, containment * 0.82);
+}
+
+function scoreArtist(track: SpotifyTrack, candidate: YtmusicCandidate) {
+  const candidateTokens = tokenize(
+    normalizeText(`${candidate.artists.join(" ")} ${candidate.title}`),
+  );
+  const primaryArtistScore = scoreArtistName(track.artists[0] ?? "", candidateTokens);
+  const featuredArtistScores = track.artists
+    .slice(1)
+    .map((artist) => scoreArtistName(artist, candidateTokens));
+  if (featuredArtistScores.length === 0) {
+    return primaryArtistScore;
+  }
+
+  const featuredArtistScore =
+    featuredArtistScores.reduce((total, score) => total + score, 0) /
+    featuredArtistScores.length;
+  return clamp(primaryArtistScore * 0.78 + featuredArtistScore * 0.22, 0, 1);
+}
+
+function scoreArtistName(artist: string, candidateTokens: string[]) {
+  const artistTokens = tokenize(normalizeText(artist));
+
+  if (artistTokens.length === 0 || candidateTokens.length === 0) {
+    return 0;
+  }
+
+  const shared = intersectionCount(artistTokens, candidateTokens);
+
+  if (shared === artistTokens.length) {
+    return 1;
+  }
+
+  return shared / artistTokens.length;
+}
+
+function scoreDuration(trackDurationMs: number, candidateDurationMs: number) {
+  const deltaSeconds = Math.abs(trackDurationMs - candidateDurationMs) / 1000;
+
+  if (deltaSeconds <= 2) {
+    return 1;
+  }
+
+  if (deltaSeconds <= 10) {
+    return 0.95;
+  }
+
+  if (deltaSeconds <= 20) {
+    return 0.82;
+  }
+
+  if (deltaSeconds <= 45) {
+    return 0.55;
+  }
+
+  if (deltaSeconds <= 90) {
+    return 0.18;
+  }
+
+  return 0;
+}
+
+function scoreResultType(candidate: YtmusicCandidate) {
+  if (candidate.resultType === "song") {
+    return 1;
+  }
+
+  const tokens = new Set(tokenize(normalizeText(candidate.title)));
+
+  return [
+    "official",
+    "audio",
+    "video",
+    "lyrics",
+    "lyric",
+    "visualizer",
+    "visualiser",
+  ].some((token) => tokens.has(token))
+    ? 0.9
+    : 0.74;
+}
+
+function scoreAlbum(track: SpotifyTrack, candidate: YtmusicCandidate) {
+  if (!candidate.album || track.album === "Unknown album") {
+    return 0;
+  }
+
+  return normalizeText(candidate.album) === normalizeText(track.album) ? 1 : 0;
+}
+
+function scoreEditionPenalty(trackTitle: string, candidateTitle: string) {
+  const trackTokens = new Set(tokenize(normalizeText(trackTitle)));
+  const candidateTokens = new Set(tokenize(normalizeText(candidateTitle)));
+  let penalty = 1;
+
+  for (const token of editionTokens) {
+    if (candidateTokens.has(token) && !trackTokens.has(token)) {
+      penalty -= token === "cover" || token === "karaoke" ? 0.24 : 0.13;
+    }
+  }
+
+  return clamp(penalty, 0.55, 1);
+}
+
+function normalizeSongTitle(value: string) {
+  return tokenize(
+    normalizeText(
+      value
+        .replace(/\((?:feat|ft|with|prod)\.?[^)]*\)/gi, " ")
+        .replace(/\[(?:feat|ft|with|prod)\.?[^\]]*]/gi, " "),
+    ),
+  )
+    .filter((token) => !benignVideoTitleTokens.has(token))
+    .join(" ");
+}
+
+function tokenize(value: string) {
+  return value.split(" ").filter(Boolean);
+}
+
+function intersectionCount(left: string[], right: string[]) {
+  const rightTokens = new Set(right);
+
+  return left.filter((token) => rightTokens.has(token)).length;
+}
+
+function isClearWinner(best: number, second = 0) {
+  return best >= 0.94 || best - second >= 0.04;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function roundConfidence(confidence: number) {
   return Math.round(confidence * 100) / 100;
 }
@@ -226,13 +442,14 @@ function roundConfidence(confidence: number) {
 async function runWorker(
   pythonCommand: string,
   workerPath: string,
-  payload: { limit: number; tracks: SpotifyTrack[] },
+  payload: { includeVideos: boolean; limit: number; tracks: SpotifyTrack[] },
   logEvent: LogEventWriter,
 ): Promise<YtmusicCandidateSearchResult[]> {
   return new Promise((resolvePromise, reject) => {
     logEvent("info", "api", "ytmusic.worker.spawned", {
       workerPath,
       trackCount: payload.tracks.length,
+      includeVideos: payload.includeVideos,
       limit: payload.limit,
     });
     const child = spawn(pythonCommand, [workerPath, "match"], {

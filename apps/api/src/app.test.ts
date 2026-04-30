@@ -1,14 +1,35 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app";
 import { ConversionService } from "./services/conversion.service";
 import {
+  defaultMatchingSettings,
+  MatchingSettingsService,
+} from "./services/matching-settings.service";
+import {
   YtmusicService,
+  type YtmusicSearchClient,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
 
+const tempDirectories: string[] = [];
+
 afterEach(() => {
   vi.unstubAllGlobals();
+
+  for (const directory of tempDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
+
+function createSettingsPath() {
+  const directory = mkdtempSync(join(tmpdir(), "spottoyt-api-settings-"));
+  tempDirectories.push(directory);
+
+  return join(directory, "settings.json");
+}
 
 function spicetifySnapshot(
   playlistName = "Road trip",
@@ -56,6 +77,141 @@ describe("api shell", () => {
     expect(response.statusCode).toBe(200);
     expect("spotify" in response.json()).toBe(false);
     expect(response.json().youtubeMusic.connected).toBe(false);
+
+    await app.close();
+  });
+
+  it("reads and saves matching settings through the API", async () => {
+    const settingsPath = createSettingsPath();
+    const settings = new MatchingSettingsService(settingsPath);
+    const app = buildApp(
+      { logger: false },
+      {
+        matchingSettings: settings,
+      },
+    );
+    await app.ready();
+
+    const initial = await app.inject({
+      method: "GET",
+      url: "/settings/matching",
+    });
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/settings/matching",
+      payload: {
+        autoAcceptThreshold: 0.9,
+        reviewThreshold: 0.65,
+        searchLimit: 14,
+        includeVideos: false,
+      },
+    });
+
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().settings).toEqual(defaultMatchingSettings);
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().settings).toEqual({
+      autoAcceptThreshold: 0.9,
+      reviewThreshold: 0.65,
+      searchLimit: 14,
+      includeVideos: false,
+    });
+
+    await app.close();
+
+    const reloadedApp = buildApp(
+      { logger: false },
+      {
+        matchingSettings: new MatchingSettingsService(settingsPath),
+      },
+    );
+    await reloadedApp.ready();
+
+    const reloaded = await reloadedApp.inject({
+      method: "GET",
+      url: "/settings/matching",
+    });
+
+    expect(reloaded.statusCode).toBe(200);
+    expect(reloaded.json().settings).toEqual(updated.json().settings);
+
+    await reloadedApp.close();
+  });
+
+  it("rejects invalid matching settings", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        matchingSettings: new MatchingSettingsService(createSettingsPath()),
+      },
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/settings/matching",
+      payload: {
+        autoAcceptThreshold: 0.55,
+        reviewThreshold: 0.75,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("Invalid matching settings");
+
+    await app.close();
+  });
+
+  it("uses saved matching settings when matching conversions", async () => {
+    const searchClient = {
+      async findCandidatesForTracks() {
+        return [
+          {
+            trackId: "spotify:track:midnight-city",
+            candidates: [
+              {
+                videoId: "ytm-midnight-city-lyrics",
+                title: "M83 - Midnight City (Lyrics)",
+                artists: ["M83"],
+                durationMs: 243000,
+                resultType: "video",
+              },
+            ],
+          },
+        ];
+      },
+    } satisfies YtmusicSearchClient;
+    const app = buildApp(
+      { logger: false },
+      {
+        matchingSettings: new MatchingSettingsService(createSettingsPath()),
+        ytmusicSearchClient: searchClient,
+      },
+    );
+    await app.ready();
+
+    await app.inject({
+      method: "PATCH",
+      url: "/settings/matching",
+      payload: { autoAcceptThreshold: 0.99 },
+    });
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    const matched = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    expect(matched.statusCode).toBe(200);
+    expect(matched.json().conversion.matches[0]).toMatchObject({
+      candidate: {
+        videoId: "ytm-midnight-city-lyrics",
+      },
+      status: "review",
+    });
 
     await app.close();
   });
@@ -187,6 +343,128 @@ describe("api shell", () => {
       "Midnight City",
     );
     expect(matched.json().summary.total).toBe(1);
+
+    await app.close();
+  });
+
+  it("persists match decision status changes through the API", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks() {
+            return [
+              {
+                trackId: "spotify:track:midnight-city",
+                candidates: [
+                  {
+                    videoId: "ytm-midnight-city",
+                    title: "Midnight City",
+                    artists: ["M83"],
+                    album: "Hurry Up, We're Dreaming",
+                    durationMs: 243000,
+                    resultType: "song",
+                  },
+                ],
+              },
+            ];
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const skipped = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/status`,
+      payload: { status: "skipped" },
+    });
+    const latest = await app.inject({
+      method: "GET",
+      url: "/imports/latest",
+    });
+
+    expect(skipped.statusCode).toBe(200);
+    expect(skipped.json().conversion.matches[0]).toEqual({
+      trackId: "spotify:track:midnight-city",
+      candidate: null,
+      confidence: 0,
+      status: "skipped",
+    });
+    expect(skipped.json().summary.skipped).toBe(1);
+    expect(latest.json().conversion.matches[0]).toEqual(
+      skipped.json().conversion.matches[0],
+    );
+
+    await app.close();
+  });
+
+  it("reruns search for one track and persists the replacement match", async () => {
+    let searchCount = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks() {
+            searchCount += 1;
+
+            return [
+              {
+                trackId: "spotify:track:midnight-city",
+                candidates:
+                  searchCount === 1
+                    ? []
+                    : [
+                        {
+                          videoId: "ytm-midnight-city-retry",
+                          title: "M83 - Midnight City (Official Video)",
+                          artists: ["M83"],
+                          durationMs: 244000,
+                          resultType: "video",
+                        },
+                      ],
+              },
+            ];
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const searched = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/search`,
+    });
+
+    expect(searched.statusCode).toBe(200);
+    expect(searched.json().match).toMatchObject({
+      trackId: "spotify:track:midnight-city",
+      candidate: {
+        videoId: "ytm-midnight-city-retry",
+      },
+      status: "accepted",
+    });
+    expect(searched.json().conversion.matches[0]).toEqual(
+      searched.json().match,
+    );
 
     await app.close();
   });

@@ -53,11 +53,42 @@ export const ytmusicCandidateSchema = z.object({
   resultType: z.enum(["song", "video"]),
 });
 
+export const matchDecisionStatusSchema = z.enum([
+  "accepted",
+  "review",
+  "skipped",
+]);
+
 export const matchDecisionSchema = z.object({
   trackId: z.string(),
   candidate: ytmusicCandidateSchema.nullable(),
   confidence: z.number().min(0).max(1),
-  status: z.enum(["accepted", "review", "skipped"]),
+  status: matchDecisionStatusSchema,
+});
+
+export const matchDecisionUpdateRequestSchema = z.object({
+  status: matchDecisionStatusSchema,
+});
+
+const matchingSettingsBaseSchema = z.object({
+  autoAcceptThreshold: z.number().min(0.5).max(1),
+  reviewThreshold: z.number().min(0.2).max(0.95),
+  searchLimit: z.number().int().min(3).max(20),
+  includeVideos: z.boolean(),
+});
+
+export const matchingSettingsSchema = matchingSettingsBaseSchema.refine(
+  (settings) => settings.autoAcceptThreshold >= settings.reviewThreshold,
+  {
+    message: "Auto-accept threshold must be greater than review threshold.",
+    path: ["autoAcceptThreshold"],
+  },
+);
+
+export const matchingSettingsPatchSchema = matchingSettingsBaseSchema.partial();
+
+export const matchingSettingsResponseSchema = z.object({
+  settings: matchingSettingsSchema,
 });
 
 export const conversionJobSchema = z.object({

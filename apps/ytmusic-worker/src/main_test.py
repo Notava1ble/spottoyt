@@ -103,9 +103,10 @@ class YtmusicWorkerTest(unittest.TestCase):
                 }
             ],
         )
-        client.search.assert_called_once_with(
+        client.search.assert_any_call(
             "Sweet Disposition The Temper Trap",
-            limit=5,
+            filter="songs",
+            limit=3,
             ignore_spelling=False,
         )
 
@@ -169,6 +170,108 @@ class YtmusicWorkerTest(unittest.TestCase):
         )
 
     @patch("main.YTMusic")
+    @patch("main.YoutubeDL")
+    def test_match_tracks_uses_targeted_song_and_video_queries_with_deduplication(
+        self, youtube_dl, ytmusic
+    ):
+        client = Mock()
+        calls = []
+
+        def search(query, **kwargs):
+            calls.append((query, kwargs))
+
+            if kwargs.get("filter") == "songs" and query == "Love Me Lil Wayne Drake Future":
+                return [
+                    {
+                        "videoId": "love-me-song",
+                        "title": "Love Me",
+                        "artists": [{"name": "Lil Wayne"}, {"name": "Drake"}, {"name": "Future"}],
+                        "duration_seconds": 257,
+                        "resultType": "song",
+                    }
+                ]
+
+            if kwargs.get("filter") == "videos":
+                return [
+                    {
+                        "videoId": "love-me-song",
+                        "title": "Lil Wayne - Love Me (Lyrics) ft. Drake, Future",
+                        "artists": [{"name": "Lil Wayne"}],
+                        "duration_seconds": 257,
+                        "resultType": "video",
+                    },
+                    {
+                        "videoId": "love-me-video",
+                        "title": "Lil Wayne - Love Me (Official Music Video) ft. Drake, Future",
+                        "artists": [{"name": "Lil Wayne"}],
+                        "duration_seconds": 259,
+                        "resultType": "video",
+                    },
+                ]
+
+            return []
+
+        client.search.side_effect = search
+        ytmusic.return_value = client
+
+        response = match_tracks(
+            [
+                {
+                    "id": "spotify:track:love-me",
+                    "title": "Love Me",
+                    "artists": ["Lil Wayne", "Drake", "Future"],
+                }
+            ],
+            limit=8,
+            include_videos=True,
+        )
+
+        self.assertEqual(
+            [candidate["videoId"] for candidate in response[0]["candidates"]],
+            ["love-me-song", "love-me-video"],
+        )
+        self.assertIn(
+            (
+                "Love Me Lil Wayne Drake Future",
+                {"filter": "songs", "limit": 4, "ignore_spelling": False},
+            ),
+            calls,
+        )
+        self.assertTrue(any(call[1].get("filter") == "videos" for call in calls))
+        youtube_dl.assert_not_called()
+
+    @patch("main.YTMusic")
+    @patch("main.YoutubeDL")
+    def test_match_tracks_skips_video_queries_when_videos_are_disabled(
+        self, youtube_dl, ytmusic
+    ):
+        client = Mock()
+        calls = []
+
+        def search(query, **kwargs):
+            calls.append((query, kwargs))
+            return []
+
+        client.search.side_effect = search
+        ytmusic.return_value = client
+
+        response = match_tracks(
+            [
+                {
+                    "id": "spotify:track:midnight-city",
+                    "title": "Midnight City",
+                    "artists": ["M83"],
+                }
+            ],
+            limit=8,
+            include_videos=False,
+        )
+
+        self.assertEqual(response[0], {"trackId": "spotify:track:midnight-city", "candidates": []})
+        self.assertFalse(any(call[1].get("filter") == "videos" for call in calls))
+        youtube_dl.assert_not_called()
+
+    @patch("main.YTMusic")
     def test_match_tracks_continues_when_one_track_search_fails(self, ytmusic):
         client = Mock()
         client.search.side_effect = [
@@ -221,7 +324,8 @@ class YtmusicWorkerTest(unittest.TestCase):
         )
         client.search.assert_any_call(
             "Sweet Disposition The Temper Trap",
-            limit=5,
+            filter="songs",
+            limit=3,
             ignore_spelling=False,
         )
 

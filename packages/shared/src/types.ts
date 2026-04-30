@@ -6,6 +6,11 @@ import type {
   importEventSchema,
   latestImportResponseSchema,
   matchDecisionSchema,
+  matchDecisionStatusSchema,
+  matchDecisionUpdateRequestSchema,
+  matchingSettingsPatchSchema,
+  matchingSettingsResponseSchema,
+  matchingSettingsSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
   spicetifyPlaylistTrackSchema,
@@ -24,6 +29,17 @@ export type SpicetifyPlaylistSnapshot = z.infer<
 >;
 export type YtmusicCandidate = z.infer<typeof ytmusicCandidateSchema>;
 export type MatchDecision = z.infer<typeof matchDecisionSchema>;
+export type MatchDecisionStatus = z.infer<typeof matchDecisionStatusSchema>;
+export type MatchDecisionUpdateRequest = z.infer<
+  typeof matchDecisionUpdateRequestSchema
+>;
+export type MatchingSettings = z.infer<typeof matchingSettingsSchema>;
+export type MatchingSettingsPatch = z.infer<
+  typeof matchingSettingsPatchSchema
+>;
+export type MatchingSettingsResponse = z.infer<
+  typeof matchingSettingsResponseSchema
+>;
 export type ConversionJob = z.infer<typeof conversionJobSchema>;
 export type LatestImportResponse = z.infer<typeof latestImportResponseSchema>;
 export type SpicetifyImportResponse = z.infer<

@@ -3,6 +3,10 @@ import {
   accountStatusResponseSchema,
   type ConversionJob,
   latestImportResponseSchema,
+  matchDecisionUpdateRequestSchema,
+  matchingSettingsPatchSchema,
+  matchingSettingsResponseSchema,
+  matchingSettingsSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
 } from "@spottoyt/shared";
@@ -10,7 +14,10 @@ import Fastify, { type FastifyServerOptions } from "fastify";
 import {
   ConversionNotFoundError,
   ConversionService,
+  InvalidMatchDecisionError,
   ImportLockedError,
+  MatchNotFoundError,
+  TrackNotFoundError,
 } from "./services/conversion.service";
 import { env } from "./config/env";
 import { registerClientLogRoutes } from "./logging/client-log.routes";
@@ -20,7 +27,12 @@ import {
   type LogEventWriter,
 } from "./logging/logger";
 import { ImportEventsService } from "./services/import-events.service";
-import { YtmusicWorkerUnavailableError } from "./services/ytmusic.service";
+import { MatchingSettingsService } from "./services/matching-settings.service";
+import {
+  YtmusicService,
+  type YtmusicSearchClient,
+  YtmusicWorkerUnavailableError,
+} from "./services/ytmusic.service";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
 
@@ -29,6 +41,8 @@ type SpicetifyImportBody = unknown;
 type AppDependencies = {
   conversions?: ConversionService;
   logEvent?: LogEventWriter;
+  matchingSettings?: MatchingSettingsService;
+  ytmusicSearchClient?: YtmusicSearchClient;
 };
 
 const conversionParamsSchema = {
@@ -37,6 +51,16 @@ const conversionParamsSchema = {
   additionalProperties: false,
   properties: {
     id: { type: "string", minLength: 1 },
+  },
+} as const;
+
+const matchParamsSchema = {
+  type: "object",
+  required: ["id", "trackId"],
+  additionalProperties: false,
+  properties: {
+    id: { type: "string", minLength: 1 },
+    trackId: { type: "string", minLength: 1 },
   },
 } as const;
 
@@ -94,8 +118,19 @@ export function buildApp(
   });
   const logEvent =
     dependencies.logEvent ?? createLogEventWriter(app.log || false);
+  const matchingSettings =
+    dependencies.matchingSettings ?? new MatchingSettingsService();
   const conversions =
-    dependencies.conversions ?? new ConversionService(undefined, undefined, logEvent);
+    dependencies.conversions ??
+    new ConversionService(
+      new YtmusicService(
+        dependencies.ytmusicSearchClient,
+        logEvent,
+        matchingSettings,
+      ),
+      undefined,
+      logEvent,
+    );
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
@@ -154,6 +189,47 @@ export function buildApp(
     database: getDatabaseStatus(),
     plannedTables,
   }));
+
+  app.get("/settings/matching", async () =>
+    matchingSettingsResponseSchema.parse({
+      settings: matchingSettings.getSettings(),
+    }),
+  );
+
+  app.patch<{ Body: unknown }>("/settings/matching", async (request, reply) => {
+    const parsedPatch = matchingSettingsPatchSchema.safeParse(
+      request.body ?? {},
+    );
+
+    if (!parsedPatch.success) {
+      reply.code(400);
+      return {
+        error: "Invalid matching settings",
+        message:
+          parsedPatch.error.issues[0]?.message ??
+          "Expected matching settings patch.",
+      };
+    }
+
+    const parsedSettings = matchingSettingsSchema.safeParse({
+      ...matchingSettings.getSettings(),
+      ...parsedPatch.data,
+    });
+
+    if (!parsedSettings.success) {
+      reply.code(400);
+      return {
+        error: "Invalid matching settings",
+        message:
+          parsedSettings.error.issues[0]?.message ??
+          "Expected matching settings.",
+      };
+    }
+
+    return matchingSettingsResponseSchema.parse({
+      settings: matchingSettings.updateSettings(parsedSettings.data),
+    });
+  });
 
   app.get("/events", async (request, reply) => {
     reply.raw.writeHead(200, {
@@ -252,6 +328,57 @@ export function buildApp(
     },
   });
 
+  app.post<{
+    Body: unknown;
+    Params: { id: string; trackId: string };
+  }>("/conversions/:id/matches/:trackId/status", {
+    schema: {
+      params: matchParamsSchema,
+    },
+    handler: async (request, reply) => {
+      const parsed = matchDecisionUpdateRequestSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        reply.code(400);
+        return {
+          error: "Invalid match decision",
+          message:
+            parsed.error.issues[0]?.message ??
+            "Expected a match decision status.",
+        };
+      }
+
+      try {
+        return conversions.updateMatchStatus(
+          request.params.id,
+          request.params.trackId,
+          parsed.data.status,
+        );
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
+  app.post<{ Params: { id: string; trackId: string } }>(
+    "/conversions/:id/matches/:trackId/search",
+    {
+      schema: {
+        params: matchParamsSchema,
+      },
+      handler: async (request, reply) => {
+        try {
+          return await conversions.searchTrackMatch(
+            request.params.id,
+            request.params.trackId,
+          );
+        } catch (error) {
+          return handleConversionError(error, reply);
+        }
+      },
+    },
+  );
+
   app.post<{ Params: { id: string } }>("/conversions/:id/create", {
     schema: {
       params: conversionParamsSchema,
@@ -277,6 +404,16 @@ function handleConversionError(
   if (error instanceof ConversionNotFoundError) {
     reply.code(404);
     return { error: "Conversion not found" };
+  }
+
+  if (error instanceof TrackNotFoundError || error instanceof MatchNotFoundError) {
+    reply.code(404);
+    return { error: error.message };
+  }
+
+  if (error instanceof InvalidMatchDecisionError) {
+    reply.code(409);
+    return { error: "Invalid match decision", message: error.message };
   }
 
   if (error instanceof YtmusicWorkerUnavailableError) {

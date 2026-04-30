@@ -2,6 +2,8 @@ import {
   type ConversionJob,
   conversionJobSchema,
   type MatchDecision,
+  type MatchDecisionStatus,
+  matchDecisionSchema,
   type SpicetifyPlaylistSnapshot,
   type SpotifyTrack,
 } from "@spottoyt/shared";
@@ -134,6 +136,56 @@ export class ConversionService {
     };
   }
 
+  updateMatchStatus(
+    id: string,
+    trackId: string,
+    status: MatchDecisionStatus,
+  ) {
+    const conversion = this.requireLatestConversion(id);
+    const existing = conversion.matches.find((match) => match.trackId === trackId);
+
+    if (!existing && status !== "skipped") {
+      throw new MatchNotFoundError();
+    }
+
+    if (existing?.candidate === null && status !== "skipped") {
+      throw new InvalidMatchDecisionError();
+    }
+
+    const match = matchDecisionSchema.parse(
+      status === "skipped"
+        ? {
+            trackId,
+            candidate: null,
+            confidence: 0,
+            status,
+          }
+        : {
+            ...existing,
+            status,
+          },
+    );
+
+    return this.replaceMatch(conversion, match);
+  }
+
+  async searchTrackMatch(id: string, trackId: string) {
+    const conversion = this.requireLatestConversion(id);
+    const track = conversion.tracks.find((item) => item.id === trackId);
+
+    if (!track) {
+      throw new TrackNotFoundError();
+    }
+
+    const [match] = await this.ytmusic.findMatchesForTracks([track]);
+
+    if (!match) {
+      throw new MatchNotFoundError();
+    }
+
+    return this.replaceMatch(conversion, match);
+  }
+
   async createPlaylist(id: string) {
     const conversion = this.getConversion(id);
     this.logEvent("info", "api", "conversion.playlist.create_started", {
@@ -178,6 +230,40 @@ export class ConversionService {
 
     return this.latestImport;
   }
+
+  private replaceMatch(conversion: ConversionJob, match: MatchDecision) {
+    const matchesByTrackId = new Map(
+      conversion.matches.map((item) => [item.trackId, item]),
+    );
+    matchesByTrackId.set(match.trackId, match);
+
+    const matches = conversion.tracks.flatMap((track) => {
+      const nextMatch = matchesByTrackId.get(track.id);
+
+      return nextMatch ? [nextMatch] : [];
+    });
+    const updated = conversionJobSchema.parse({
+      ...conversion,
+      status: "reviewing",
+      updatedAt: new Date().toISOString(),
+      matches,
+    });
+    this.latestImport = updated;
+    const summary = this.matcher.summarize(updated.matches);
+
+    this.logEvent("info", "api", "conversion.match.updated", {
+      conversionId: updated.id,
+      trackId: match.trackId,
+      status: match.status,
+      ...summary,
+    });
+
+    return {
+      conversion: updated,
+      match,
+      summary,
+    };
+  }
 }
 
 export class ImportLockedError extends Error {
@@ -189,6 +275,24 @@ export class ImportLockedError extends Error {
 export class ConversionNotFoundError extends Error {
   constructor() {
     super("Conversion not found");
+  }
+}
+
+export class TrackNotFoundError extends Error {
+  constructor() {
+    super("Track not found");
+  }
+}
+
+export class MatchNotFoundError extends Error {
+  constructor() {
+    super("Match not found");
+  }
+}
+
+export class InvalidMatchDecisionError extends Error {
+  constructor() {
+    super("Match decision is not valid for the current track");
   }
 }
 

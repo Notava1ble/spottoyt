@@ -1,5 +1,6 @@
 import type { SpotifyTrack } from "@spottoyt/shared";
 import { describe, expect, it } from "vitest";
+import { defaultMatchingSettings } from "./matching-settings.service";
 import {
   getDefaultPythonCommand,
   YtmusicService,
@@ -67,6 +68,108 @@ describe("YtmusicService", () => {
     ]);
   });
 
+  it("should auto-accept official lyric or video candidates when title, artist, and duration agree", async () => {
+    const track = {
+      ...baseTrack,
+      id: "spotify:track:where-have-you-been",
+      title: "Where Have You Been",
+      artists: ["Rihanna"],
+      album: "Talk That Talk",
+      durationMs: 243000,
+    } satisfies SpotifyTrack;
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: track.id,
+          candidates: [
+            {
+              videoId: "ytm-where-have-you-been-lyrics",
+              title: "Rihanna - Where Have You Been (Lyrics)",
+              artists: ["Rihanna"],
+              durationMs: 243000,
+              resultType: "video",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const matches = await service.findMatchesForTracks([track]);
+
+    expect(matches[0]).toMatchObject({
+      trackId: track.id,
+      candidate: {
+        videoId: "ytm-where-have-you-been-lyrics",
+      },
+      status: "accepted",
+    });
+    expect(matches[0]?.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("should honor configured auto-accept thresholds", async () => {
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: baseTrack.id,
+          candidates: [
+            {
+              videoId: "ytm-midnight-city-lyrics",
+              title: "M83 - Midnight City (Lyrics)",
+              artists: ["M83"],
+              durationMs: 243000,
+              resultType: "video",
+            },
+          ],
+        },
+      ]),
+      undefined,
+      {
+        getSettings: () => ({
+          ...defaultMatchingSettings,
+          autoAcceptThreshold: 0.99,
+        }),
+      },
+    );
+
+    const matches = await service.findMatchesForTracks([baseTrack]);
+
+    expect(matches[0]).toMatchObject({
+      candidate: {
+        videoId: "ytm-midnight-city-lyrics",
+      },
+      status: "review",
+    });
+    expect(matches[0]?.confidence).toBeLessThan(0.99);
+  });
+
+  it("should pass configured search options to the YouTube Music search client", async () => {
+    let receivedOptions: unknown;
+    const service = new YtmusicService(
+      {
+        async findCandidatesForTracks(_tracks, options) {
+          receivedOptions = options;
+
+          return [];
+        },
+      },
+      undefined,
+      {
+        getSettings: () => ({
+          ...defaultMatchingSettings,
+          searchLimit: 14,
+          includeVideos: false,
+        }),
+      },
+    );
+
+    await service.findMatchesForTracks([baseTrack]);
+
+    expect(receivedOptions).toEqual({
+      includeVideos: false,
+      searchLimit: 14,
+    });
+  });
+
   it("should send medium-confidence matches to review", async () => {
     const service = new YtmusicService(
       new FakeSearchClient([
@@ -127,20 +230,18 @@ describe("YtmusicService", () => {
       unmatchedTrack,
     ]);
 
-    expect(matches).toEqual([
-      {
-        trackId: baseTrack.id,
-        candidate: null,
-        confidence: 0.2,
-        status: "skipped",
-      },
-      {
-        trackId: unmatchedTrack.id,
-        candidate: null,
-        confidence: 0,
-        status: "skipped",
-      },
-    ]);
+    expect(matches[0]).toMatchObject({
+      trackId: baseTrack.id,
+      candidate: null,
+      status: "skipped",
+    });
+    expect(matches[0]?.confidence).toBeLessThan(0.2);
+    expect(matches[1]).toEqual({
+      trackId: unmatchedTrack.id,
+      candidate: null,
+      confidence: 0,
+      status: "skipped",
+    });
   });
 
   it("should report worker setup failures as service unavailable errors", async () => {
