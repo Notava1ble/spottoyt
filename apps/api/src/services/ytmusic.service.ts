@@ -6,7 +6,9 @@ import {
   type YtmusicCandidate,
 } from "@spottoyt/shared";
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { platform } from "node:process";
 import { fileURLToPath } from "node:url";
 
 export type YtmusicCandidateSearchResult = {
@@ -55,15 +57,12 @@ export class YtmusicService {
 }
 
 export class PythonYtmusicSearchClient implements YtmusicSearchClient {
-  constructor(private readonly pythonCommand = "python") {}
+  constructor(private readonly pythonCommand = getDefaultPythonCommand()) {}
 
   async findCandidatesForTracks(
     tracks: SpotifyTrack[],
   ): Promise<YtmusicCandidateSearchResult[]> {
-    const workerPath = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../../ytmusic-worker/src/main.py",
-    );
+    const workerPath = join(getWorkerDirectory(), "src", "main.py");
 
     return runWorker(this.pythonCommand, workerPath, {
       limit: searchLimit,
@@ -73,6 +72,28 @@ export class PythonYtmusicSearchClient implements YtmusicSearchClient {
 }
 
 export class YtmusicWorkerUnavailableError extends Error {}
+
+type PythonCommandOptions = {
+  existsSync: (path: string) => boolean;
+  platform: NodeJS.Platform;
+  workerDirectory: string;
+};
+
+export function getDefaultPythonCommand(
+  options: PythonCommandOptions = {
+    existsSync,
+    platform,
+    workerDirectory: getWorkerDirectory(),
+  },
+) {
+  const venvPython = join(
+    options.workerDirectory,
+    ".venv",
+    options.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+  );
+
+  return options.existsSync(venvPython) ? venvPython : "python";
+}
 
 function decideMatch(
   track: SpotifyTrack,
@@ -202,6 +223,7 @@ async function runWorker(
       }
 
       try {
+        logWorkerDiagnostics(errorOutput);
         resolvePromise(
           parseWorkerResults(Buffer.concat(stdout).toString("utf8")),
         );
@@ -218,6 +240,16 @@ async function runWorker(
 
     child.stdin.end(JSON.stringify(payload));
   });
+}
+
+function getWorkerDirectory() {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../ytmusic-worker");
+}
+
+function logWorkerDiagnostics(diagnostics: string) {
+  if (diagnostics) {
+    console.info(diagnostics);
+  }
 }
 
 function parseWorkerResults(output: string): YtmusicCandidateSearchResult[] {

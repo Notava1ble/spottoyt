@@ -30,6 +30,124 @@ class YtmusicWorkerTest(unittest.TestCase):
         )
 
     @patch("main.YTMusic")
+    @patch("main.YoutubeDL")
+    def test_match_tracks_uses_default_search_and_filters_music_results(
+        self, youtube_dl, ytmusic
+    ):
+        client = Mock()
+        client.search.return_value = [
+            {
+                "resultType": "artist",
+                "artists": [{"name": "The Temper Trap"}],
+            },
+            {
+                "videoId": "sweet-disposition",
+                "title": "Sweet Disposition",
+                "artists": [{"name": "The Temper Trap"}],
+                "album": {"name": "Conditions"},
+                "duration_seconds": 231,
+                "resultType": "song",
+            },
+        ]
+        ytmusic.return_value = client
+        youtube_dl.assert_not_called()
+
+        response = match_tracks(
+            [
+                {
+                    "id": "spotify:track:sweet-disposition",
+                    "title": "Sweet Disposition",
+                    "artists": ["The Temper Trap"],
+                },
+            ],
+            limit=5,
+        )
+
+        self.assertEqual(
+            response,
+            [
+                {
+                    "trackId": "spotify:track:sweet-disposition",
+                    "candidates": [
+                        {
+                            "videoId": "sweet-disposition",
+                            "title": "Sweet Disposition",
+                            "artists": ["The Temper Trap"],
+                            "album": "Conditions",
+                            "durationMs": 231000,
+                            "resultType": "song",
+                        }
+                    ],
+                }
+            ],
+        )
+        client.search.assert_called_once_with(
+            "Sweet Disposition The Temper Trap",
+            limit=5,
+            ignore_spelling=False,
+        )
+
+    @patch("main.YTMusic")
+    @patch("main.YoutubeDL")
+    def test_match_tracks_falls_back_to_youtube_search_when_ytmusic_has_no_candidates(
+        self, youtube_dl, ytmusic
+    ):
+        client = Mock()
+        client.search.return_value = [
+            {
+                "resultType": "artist",
+                "artist": "M83",
+            }
+        ]
+        ytmusic.return_value = client
+        youtube = Mock()
+        youtube.extract_info.return_value = {
+            "entries": [
+                {
+                    "id": "dX3k_QDnzHE",
+                    "title": "M83 'Midnight City' Official video",
+                    "duration": 244,
+                    "channel": "M83",
+                }
+            ]
+        }
+        youtube_dl.return_value.__enter__.return_value = youtube
+
+        response = match_tracks(
+            [
+                {
+                    "id": "spotify:track:midnight-city",
+                    "title": "Midnight City",
+                    "artists": ["M83"],
+                }
+            ],
+            limit=5,
+        )
+
+        self.assertEqual(
+            response,
+            [
+                {
+                    "trackId": "spotify:track:midnight-city",
+                    "candidates": [
+                        {
+                            "videoId": "dX3k_QDnzHE",
+                            "title": "M83 'Midnight City' Official video",
+                            "artists": ["M83"],
+                            "album": None,
+                            "durationMs": 244000,
+                            "resultType": "video",
+                        }
+                    ],
+                }
+            ],
+        )
+        youtube.extract_info.assert_called_once_with(
+            "ytsearch5:Midnight City M83",
+            download=False,
+        )
+
+    @patch("main.YTMusic")
     def test_match_tracks_continues_when_one_track_search_fails(self, ytmusic):
         client = Mock()
         client.search.side_effect = [
@@ -81,10 +199,9 @@ class YtmusicWorkerTest(unittest.TestCase):
             },
         )
         client.search.assert_any_call(
-            '"Sweet Disposition" "The Temper Trap"',
-            filter="songs",
+            "Sweet Disposition The Temper Trap",
             limit=5,
-            ignore_spelling=True,
+            ignore_spelling=False,
         )
 
     @patch("main.YTMusic", None)

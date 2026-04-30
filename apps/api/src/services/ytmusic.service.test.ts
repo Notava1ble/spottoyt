@@ -1,6 +1,7 @@
 import type { SpotifyTrack } from "@spottoyt/shared";
 import { describe, expect, it } from "vitest";
 import {
+  getDefaultPythonCommand,
   YtmusicService,
   YtmusicWorkerUnavailableError,
   type YtmusicSearchClient,
@@ -151,6 +152,18 @@ describe("YtmusicService", () => {
 
     await expect(service.findMatchesForTracks([baseTrack])).rejects.toThrow(
       YtmusicWorkerUnavailableError,
+    );
+  });
+
+  it("should prefer the worker-local uv virtual environment python", () => {
+    const command = getDefaultPythonCommand({
+      platform: "win32",
+      existsSync: (path) => path.endsWith("apps\\ytmusic-worker\\.venv\\Scripts\\python.exe"),
+      workerDirectory: "C:\\repo\\apps\\ytmusic-worker",
+    });
+
+    expect(command).toBe(
+      "C:\\repo\\apps\\ytmusic-worker\\.venv\\Scripts\\python.exe",
     );
   });
 });
