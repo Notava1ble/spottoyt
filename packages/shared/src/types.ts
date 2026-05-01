@@ -6,12 +6,16 @@ import type {
   conversionJobSchema,
   importEventSchema,
   latestImportResponseSchema,
+  manualMatchSearchRequestSchema,
+  manualMatchSearchResponseSchema,
+  manualMatchSelectRequestSchema,
   matchDecisionSchema,
   matchDecisionStatusSchema,
   matchDecisionUpdateRequestSchema,
   matchingSettingsPatchSchema,
   matchingSettingsResponseSchema,
   matchingSettingsSchema,
+  playlistCreateRequestSchema,
   playlistCreationResultSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
@@ -41,10 +45,17 @@ export type MatchDecisionStatus = z.infer<typeof matchDecisionStatusSchema>;
 export type MatchDecisionUpdateRequest = z.infer<
   typeof matchDecisionUpdateRequestSchema
 >;
-export type MatchingSettings = z.infer<typeof matchingSettingsSchema>;
-export type MatchingSettingsPatch = z.infer<
-  typeof matchingSettingsPatchSchema
+export type ManualMatchSearchRequest = z.infer<
+  typeof manualMatchSearchRequestSchema
 >;
+export type ManualMatchSearchResponse = z.infer<
+  typeof manualMatchSearchResponseSchema
+>;
+export type ManualMatchSelectRequest = z.infer<
+  typeof manualMatchSelectRequestSchema
+>;
+export type MatchingSettings = z.infer<typeof matchingSettingsSchema>;
+export type MatchingSettingsPatch = z.infer<typeof matchingSettingsPatchSchema>;
 export type MatchingSettingsResponse = z.infer<
   typeof matchingSettingsResponseSchema
 >;
@@ -54,3 +65,4 @@ export type SpicetifyImportResponse = z.infer<
   typeof spicetifyImportResponseSchema
 >;
 export type ImportEvent = z.infer<typeof importEventSchema>;
+export type PlaylistCreateRequest = z.infer<typeof playlistCreateRequestSchema>;

@@ -129,7 +129,11 @@ export class YtmusicService {
       );
     this.authClient =
       authClient ??
-      new PythonYtmusicAuthClient(undefined, env.ytmusicAuthPath, this.logEvent);
+      new PythonYtmusicAuthClient(
+        undefined,
+        env.ytmusicAuthPath,
+        this.logEvent,
+      );
   }
 
   async findMockMatches(): Promise<MatchDecision[]> {
@@ -185,6 +189,32 @@ export class YtmusicService {
     }
 
     return matchDecisionSchema.array().parse(matches);
+  }
+
+  async searchCandidates(query: string): Promise<YtmusicCandidate[]> {
+    const settings = this.matchingSettings.getSettings();
+    const searchTrack: SpotifyTrack = {
+      id: "manual-search",
+      title: query,
+      artists: [],
+      album: "Unknown album",
+      durationMs: 1,
+      explicit: false,
+    };
+    const [result] = await this.searchClient.findCandidatesForTracks(
+      [searchTrack],
+      {
+        includeVideos: settings.includeVideos,
+        searchLimit: settings.searchLimit,
+      },
+    );
+
+    this.logEvent("info", "api", "conversion.manual_search.completed", {
+      query,
+      candidateCount: result?.candidates.length ?? 0,
+    });
+
+    return result?.candidates ?? [];
   }
 
   async getAuthStatus() {
@@ -279,7 +309,9 @@ export class PythonYtmusicAuthClient implements YtmusicAuthClient {
   }
 }
 
-export class PythonYtmusicPlaylistClient implements YtmusicPlaylistCreateClient {
+export class PythonYtmusicPlaylistClient
+  implements YtmusicPlaylistCreateClient
+{
   constructor(
     private readonly pythonCommand = getDefaultPythonCommand(),
     private readonly authPath = env.ytmusicAuthPath,
@@ -289,7 +321,9 @@ export class PythonYtmusicPlaylistClient implements YtmusicPlaylistCreateClient 
   async createPlaylist(
     input: YtmusicPlaylistCreateInput & { privacyStatus: "PRIVATE" },
   ) {
-    return runWorker<Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">>(
+    return runWorker<
+      Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">
+    >(
       this.pythonCommand,
       "create-playlist",
       {

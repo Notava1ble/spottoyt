@@ -1,14 +1,23 @@
 import type { ConversionJob } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
-import { ExternalLink, ListMusic, MousePointerClick, Plus, RefreshCw, Search } from "lucide-react";
+import { Input } from "@spottoyt/ui/components/input";
+import {
+  ExternalLink,
+  ListMusic,
+  MousePointerClick,
+  Plus,
+  RefreshCw,
+  Search,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 type PlaylistImportPanelProps = {
   latestConversion?: ConversionJob | null;
   matching?: boolean;
   creating?: boolean;
   onMatch?: () => void;
-  onCreate?: () => void;
+  onCreate?: (targetPlaylistName: string) => void;
   onReset?: () => void;
   resetting?: boolean;
 };
@@ -22,6 +31,8 @@ export function PlaylistImportPanel({
   onReset,
   resetting = false,
 }: PlaylistImportPanelProps) {
+  const [playlistName, setPlaylistName] = useState("");
+  const lastSyncedConversionId = useRef<string | null>(null);
   const trackCount = latestConversion?.tracks.length ?? 0;
   const statusLabel =
     latestConversion?.status === "reviewing"
@@ -29,6 +40,23 @@ export function PlaylistImportPanel({
       : latestConversion
         ? "Imported"
         : "Waiting";
+  const canCreate =
+    latestConversion?.status === "reviewing" && playlistName.trim().length > 0;
+
+  useEffect(() => {
+    const nextConversionId = latestConversion?.id ?? null;
+
+    if (lastSyncedConversionId.current === nextConversionId) {
+      return;
+    }
+
+    lastSyncedConversionId.current = nextConversionId;
+    setPlaylistName(
+      latestConversion?.targetPlaylistName ||
+        latestConversion?.sourcePlaylistName ||
+        "",
+    );
+  }, [latestConversion]);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -48,6 +76,19 @@ export function PlaylistImportPanel({
             </p>
           </div>
         </div>
+        {latestConversion?.status === "reviewing" ? (
+          <label className="grid max-w-md gap-1" htmlFor="playlist-name">
+            <span className="font-medium text-foreground text-sm">
+              Playlist name
+            </span>
+            <Input
+              disabled={creating}
+              id="playlist-name"
+              onChange={(event) => setPlaylistName(event.target.value)}
+              value={playlistName}
+            />
+          </label>
+        ) : null}
         {latestConversion ? (
           <div className="flex flex-wrap gap-2">
             {latestConversion.status === "imported" ? (
@@ -57,7 +98,11 @@ export function PlaylistImportPanel({
               </Button>
             ) : null}
             {latestConversion.status === "reviewing" ? (
-              <Button disabled={creating} onClick={onCreate} type="button">
+              <Button
+                disabled={creating || !canCreate}
+                onClick={() => onCreate?.(playlistName.trim())}
+                type="button"
+              >
                 <Plus data-icon="inline-start" aria-hidden="true" />
                 {creating ? "Creating playlist" : "Create playlist"}
               </Button>

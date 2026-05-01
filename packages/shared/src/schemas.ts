@@ -26,6 +26,12 @@ export const playlistCreationResultSchema = z.object({
   skippedTrackCount: z.number().int().nonnegative(),
 });
 
+export const playlistCreateRequestSchema = z
+  .object({
+    targetPlaylistName: z.string().trim().min(1),
+  })
+  .partial();
+
 export const spotifyTrackSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -79,6 +85,20 @@ export const matchDecisionSchema = z.object({
 
 export const matchDecisionUpdateRequestSchema = z.object({
   status: matchDecisionStatusSchema,
+});
+
+export const manualMatchSearchRequestSchema = z.object({
+  query: z.string().trim().min(1),
+});
+
+export const manualMatchSearchResponseSchema = z.object({
+  trackId: z.string(),
+  query: z.string(),
+  candidates: z.array(ytmusicCandidateSchema),
+});
+
+export const manualMatchSelectRequestSchema = z.object({
+  candidate: ytmusicCandidateSchema,
 });
 
 const matchingSettingsBaseSchema = z.object({

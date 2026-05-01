@@ -2,15 +2,12 @@ import type { ConversionJob, ImportEvent } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Card, CardContent } from "@spottoyt/ui/components/card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cable, Radio } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
 import { MatchProgressDialog } from "../components/conversion/MatchProgressDialog";
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
 import {
   createPlaylist,
-  getAccountStatus,
   getEventsUrl,
   getLatestImport,
   matchConversion,
@@ -40,16 +37,11 @@ export function ConvertPage() {
     totalTracks: 0,
   });
   const queryClient = useQueryClient();
-  const accountStatus = useQuery({
-    queryKey: ["auth-status"],
-    queryFn: getAccountStatus,
-  });
   const latestImport = useQuery({
     queryKey: ["imports-latest"],
     queryFn: getLatestImport,
   });
   const conversion = liveConversion ?? latestImport.data?.conversion ?? null;
-  const youtubeMusic = accountStatus.data?.youtubeMusic;
   const finishMatchingDialog = useCallback(
     (nextConversion: ConversionJob) => {
       setLiveConversion(nextConversion);
@@ -100,10 +92,17 @@ export function ConvertPage() {
     },
   });
   const create = useMutation({
-    mutationFn: (id: string) => createPlaylist(id),
-    onMutate: (id) => {
+    mutationFn: ({
+      id,
+      targetPlaylistName,
+    }: {
+      id: string;
+      targetPlaylistName: string;
+    }) => createPlaylist(id, { targetPlaylistName }),
+    onMutate: ({ id, targetPlaylistName }) => {
       logClientEvent("info", "web.conversion.create.clicked", {
         conversionId: id,
+        targetPlaylistName,
       });
     },
     onSuccess: (nextConversion) => {
@@ -145,14 +144,6 @@ export function ConvertPage() {
   const locked = conversion
     ? conversion.status !== "imported" && conversion.status !== "importing"
     : false;
-
-  useEffect(() => {
-    if (accountStatus.error) {
-      logClientEvent("error", "web.query.account_status.failed", {
-        message: accountStatus.error.message,
-      });
-    }
-  }, [accountStatus.error]);
 
   useEffect(() => {
     if (latestImport.error) {
@@ -282,35 +273,18 @@ export function ConvertPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <AccountConnectionCard
-          Icon={Cable}
-          name="Spotify Desktop"
-          status={conversion ? "connected" : "not-connected"}
-          actionLabel={conversion ? "Imported" : "Waiting"}
-          detail={
-            conversion
-              ? `${conversion.sourcePlaylistName} is loaded from Spicetify.`
-              : "Waiting for the Spicetify extension to send a playlist."
-          }
-          disabled
-        />
-        <AccountConnectionCard
-          Icon={Radio}
-          name="YouTube Music"
-          status={youtubeMusic?.connected ? "connected" : "not-connected"}
-        />
-      </div>
-
       <Card>
         <CardContent className="p-5">
           <PlaylistImportPanel
             creating={create.isPending}
             latestConversion={conversion}
             matching={match.isPending}
-            onCreate={() => {
+            onCreate={(targetPlaylistName) => {
               if (conversion) {
-                create.mutate(conversion.id);
+                create.mutate({
+                  id: conversion.id,
+                  targetPlaylistName,
+                });
               }
             }}
             onMatch={() => {

@@ -6,6 +6,7 @@ import {
   matchDecisionSchema,
   type SpicetifyPlaylistSnapshot,
   type SpotifyTrack,
+  type YtmusicCandidate,
 } from "@spottoyt/shared";
 import { type LogEventWriter, noopLogEvent } from "../logging/logger";
 import { MatcherService } from "./matcher.service";
@@ -55,7 +56,7 @@ export class ConversionService {
     const conversion = conversionJobSchema.parse({
       id: `conversion-${playlistIdFromUri(snapshot.spotifyPlaylistUri)}-${Date.now()}`,
       sourcePlaylistName: snapshot.playlistName,
-      targetPlaylistName: `${snapshot.playlistName} - YouTube Music`,
+      targetPlaylistName: snapshot.playlistName,
       status: "imported",
       createdAt: now,
       updatedAt: now,
@@ -193,6 +194,49 @@ export class ConversionService {
     return this.replaceMatch(conversion, match);
   }
 
+  async searchTrackCandidates(id: string, trackId: string, query: string) {
+    const conversion = this.requireLatestConversion(id);
+    const track = conversion.tracks.find((item) => item.id === trackId);
+    const trimmedQuery = query.trim();
+
+    if (!track) {
+      throw new TrackNotFoundError();
+    }
+
+    const candidates = await this.ytmusic.searchCandidates(trimmedQuery);
+
+    this.logEvent("info", "api", "conversion.manual_search.requested", {
+      conversionId: conversion.id,
+      trackId,
+      query: trimmedQuery,
+      candidateCount: candidates.length,
+    });
+
+    return {
+      trackId,
+      query: trimmedQuery,
+      candidates,
+    };
+  }
+
+  selectManualMatch(id: string, trackId: string, candidate: YtmusicCandidate) {
+    const conversion = this.requireLatestConversion(id);
+    const track = conversion.tracks.find((item) => item.id === trackId);
+
+    if (!track) {
+      throw new TrackNotFoundError();
+    }
+
+    const match = matchDecisionSchema.parse({
+      trackId,
+      candidate,
+      confidence: 1,
+      status: "accepted",
+    });
+
+    return this.replaceMatch(conversion, match);
+  }
+
   async searchTrackMatch(id: string, trackId: string) {
     const conversion = this.requireLatestConversion(id);
     const track = conversion.tracks.find((item) => item.id === trackId);
@@ -210,12 +254,17 @@ export class ConversionService {
     return this.replaceMatch(conversion, match);
   }
 
-  async createPlaylist(id: string) {
+  async createPlaylist(
+    id: string,
+    input: { targetPlaylistName?: string } = {},
+  ) {
     const conversion = this.getConversion(id);
     const acceptedMatches = conversion.matches.filter(
       (match) => match.status === "accepted" && match.candidate,
     );
     const skippedTrackCount = conversion.tracks.length - acceptedMatches.length;
+    const targetPlaylistName =
+      input.targetPlaylistName?.trim() || conversion.targetPlaylistName;
 
     if (conversion.status !== "reviewing" && conversion.status !== "complete") {
       throw new InvalidConversionStateError();
@@ -228,14 +277,14 @@ export class ConversionService {
     this.logEvent("info", "api", "conversion.playlist.create_started", {
       conversionId: conversion.id,
       acceptedTrackCount: acceptedMatches.length,
-      targetPlaylistName: conversion.targetPlaylistName,
+      targetPlaylistName,
     });
 
     let playlist: Awaited<ReturnType<YtmusicService["createPlaylist"]>>;
     try {
       playlist = await this.ytmusic.createPlaylist({
         description: "Converted from Spotify by SpottoYT.",
-        title: conversion.targetPlaylistName,
+        title: targetPlaylistName,
         videoIds: acceptedMatches.flatMap((match) =>
           match.candidate ? [match.candidate.videoId] : [],
         ),
@@ -258,7 +307,7 @@ export class ConversionService {
     const completed = conversionJobSchema.parse({
       ...conversion,
       status: "complete" as const,
-      targetPlaylistName: conversion.targetPlaylistName,
+      targetPlaylistName,
       updatedAt: new Date().toISOString(),
       playlist: {
         ...playlist,

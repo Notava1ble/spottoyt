@@ -132,10 +132,7 @@ describe("api shell", () => {
         };
       },
     };
-    const app = buildApp(
-      { logger: false },
-      { ytmusicAuth: service },
-    );
+    const app = buildApp({ logger: false }, { ytmusicAuth: service });
     await app.ready();
 
     const response = await app.inject({
@@ -323,6 +320,7 @@ describe("api shell", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().conversion.sourcePlaylistName).toBe("Road trip");
+    expect(response.json().conversion.targetPlaylistName).toBe("Road trip");
     expect(response.json().conversion.status).toBe("imported");
     expect(response.json().conversion.tracks).toEqual([
       {
@@ -659,6 +657,128 @@ describe("api shell", () => {
     await app.close();
   });
 
+  it("searches manual YouTube Music candidates from an editable query", async () => {
+    const searchedTitles: string[] = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks(tracks) {
+            searchedTitles.push(tracks[0]?.title ?? "");
+
+            return tracks.map((track) => ({
+              trackId: track.id,
+              candidates: [
+                {
+                  videoId: "ytm-midnight-city-official-audio",
+                  title: `${track.title} (Official Audio)`,
+                  artists: ["M83"],
+                  durationMs: 244000,
+                  resultType: "song" as const,
+                },
+              ],
+            }));
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const searched = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/candidates`,
+      payload: { query: "midnight city official audio" },
+    });
+
+    expect(searched.statusCode).toBe(200);
+    expect(searched.json()).toEqual({
+      trackId: "spotify:track:midnight-city",
+      query: "midnight city official audio",
+      candidates: [
+        {
+          videoId: "ytm-midnight-city-official-audio",
+          title: "midnight city official audio (Official Audio)",
+          artists: ["M83"],
+          durationMs: 244000,
+          resultType: "song",
+        },
+      ],
+    });
+    expect(searchedTitles).toContain("midnight city official audio");
+
+    await app.close();
+  });
+
+  it("persists a manually selected YouTube Music candidate", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks() {
+            return [
+              {
+                trackId: "spotify:track:midnight-city",
+                candidates: [],
+              },
+            ];
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const selected = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/manual`,
+      payload: {
+        candidate: {
+          videoId: "ytm-midnight-city-manual",
+          title: "Midnight City",
+          artists: ["M83"],
+          album: "Hurry Up, We're Dreaming",
+          durationMs: 243000,
+          resultType: "song",
+        },
+      },
+    });
+
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().match).toEqual({
+      trackId: "spotify:track:midnight-city",
+      candidate: {
+        videoId: "ytm-midnight-city-manual",
+        title: "Midnight City",
+        artists: ["M83"],
+        album: "Hurry Up, We're Dreaming",
+        durationMs: 243000,
+        resultType: "song",
+      },
+      confidence: 1,
+      status: "accepted",
+    });
+    expect(selected.json().summary.accepted).toBe(1);
+
+    await app.close();
+  });
+
   it("creates a YouTube Music playlist from accepted matches in track order", async () => {
     const playlistRequests: Array<{
       title: string;
@@ -729,6 +849,7 @@ describe("api shell", () => {
     const created = await app.inject({
       method: "POST",
       url: `/conversions/${imported.json().conversion.id}/create`,
+      payload: { targetPlaylistName: "Road trip" },
     });
 
     expect(created.statusCode).toBe(200);
@@ -741,7 +862,7 @@ describe("api shell", () => {
     });
     expect(playlistRequests).toEqual([
       {
-        title: "Road trip - YouTube Music",
+        title: "Road trip",
         videoIds: ["ytm-1"],
       },
     ]);

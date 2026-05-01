@@ -3,10 +3,13 @@ import type {
   BrowserHeadersAuthRequest,
   ConversionJob,
   LatestImportResponse,
+  ManualMatchSearchResponse,
   MatchDecision,
   MatchDecisionStatus,
   MatchingSettingsPatch,
   MatchingSettingsResponse,
+  PlaylistCreateRequest,
+  YtmusicCandidate,
 } from "@spottoyt/shared";
 import { logClientEvent } from "./logger";
 
@@ -20,10 +23,7 @@ export async function apiPost<T>(path: string): Promise<T> {
   return apiRequest<T>(path, { method: "POST" });
 }
 
-export async function apiPostJson<T>(
-  path: string,
-  body: unknown,
-): Promise<T> {
+export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
   return apiRequest<T>(path, {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -31,10 +31,7 @@ export async function apiPostJson<T>(
   });
 }
 
-export async function apiPatchJson<T>(
-  path: string,
-  body: unknown,
-): Promise<T> {
+export async function apiPatchJson<T>(path: string, body: unknown): Promise<T> {
   return apiRequest<T>(path, {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -162,8 +159,45 @@ export function searchTrackMatch(conversionId: string, trackId: string) {
   );
 }
 
-export function createPlaylist(conversionId: string) {
-  return apiPost<ConversionJob>(`/conversions/${conversionId}/create`);
+export function searchManualTrackCandidates(
+  conversionId: string,
+  trackId: string,
+  query: string,
+) {
+  return apiPostJson<ManualMatchSearchResponse>(
+    `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/candidates`,
+    { query },
+  );
+}
+
+export function selectManualTrackMatch(
+  conversionId: string,
+  trackId: string,
+  candidate: YtmusicCandidate,
+) {
+  return apiPostJson<{
+    conversion: ConversionJob;
+    match: MatchDecision;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(
+    `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/manual`,
+    { candidate },
+  );
+}
+
+export function createPlaylist(
+  conversionId: string,
+  request: PlaylistCreateRequest = {},
+) {
+  return apiPostJson<ConversionJob>(
+    `/conversions/${conversionId}/create`,
+    request,
+  );
 }
 
 export function resetImport() {

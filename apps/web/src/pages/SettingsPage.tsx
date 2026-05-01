@@ -16,12 +16,13 @@ import {
   DialogTitle,
 } from "@spottoyt/ui/components/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Radio } from "lucide-react";
+import { Cable, Radio } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
 import {
   disconnectYoutubeMusic,
   getAccountStatus,
+  getLatestImport,
   getMatchingSettings,
   setupYoutubeMusicBrowserHeaders,
   updateMatchingSettings,
@@ -43,6 +44,10 @@ export function SettingsPage() {
   const accountStatus = useQuery({
     queryKey: ["auth-status"],
     queryFn: getAccountStatus,
+  });
+  const latestImport = useQuery({
+    queryKey: ["imports-latest"],
+    queryFn: getLatestImport,
   });
   const [draft, setDraft] = useState({
     autoAcceptThreshold: "",
@@ -96,6 +101,54 @@ export function SettingsPage() {
           to audit.
         </p>
       </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AccountConnectionCard
+          Icon={Cable}
+          name="Spotify Desktop"
+          status={latestImport.data?.conversion ? "connected" : "not-connected"}
+          actionLabel={latestImport.data?.conversion ? "Imported" : "Waiting"}
+          detail={
+            latestImport.data?.conversion
+              ? `${latestImport.data.conversion.sourcePlaylistName} is loaded from Spicetify.`
+              : "Waiting for the Spicetify extension to send a playlist."
+          }
+          disabled
+        />
+        <AccountConnectionCard
+          Icon={Radio}
+          name="YouTube Music"
+          status={
+            accountStatus.data?.youtubeMusic.connected
+              ? "connected"
+              : "not-connected"
+          }
+          actionLabel={
+            accountStatus.data?.youtubeMusic.connected
+              ? "Disconnect"
+              : "Connect YouTube Music"
+          }
+          detail={
+            accountStatus.data?.youtubeMusic.connected
+              ? "Browser credentials are available locally."
+              : accountStatus.data?.youtubeMusic.configured
+                ? "Stored browser credentials need to be refreshed."
+                : "Paste browser request headers to enable playlist creation."
+          }
+          disabled={
+            accountStatus.isLoading ||
+            saveYoutubeMusicAuth.isPending ||
+            disconnectAuth.isPending
+          }
+          onAction={() => {
+            if (accountStatus.data?.youtubeMusic.connected) {
+              disconnectAuth.mutate();
+              return;
+            }
+
+            setAuthDialogOpen(true);
+          }}
+        />
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Local configuration</CardTitle>
@@ -123,40 +176,6 @@ export function SettingsPage() {
           ))}
         </CardContent>
       </Card>
-      <AccountConnectionCard
-        Icon={Radio}
-        name="YouTube Music"
-        status={
-          accountStatus.data?.youtubeMusic.connected
-            ? "connected"
-            : "not-connected"
-        }
-        actionLabel={
-          accountStatus.data?.youtubeMusic.connected
-            ? "Disconnect"
-            : "Connect YouTube Music"
-        }
-        detail={
-          accountStatus.data?.youtubeMusic.connected
-            ? "Browser credentials are available locally."
-            : accountStatus.data?.youtubeMusic.configured
-              ? "Stored browser credentials need to be refreshed."
-              : "Paste browser request headers to enable playlist creation."
-        }
-        disabled={
-          accountStatus.isLoading ||
-          saveYoutubeMusicAuth.isPending ||
-          disconnectAuth.isPending
-        }
-        onAction={() => {
-          if (accountStatus.data?.youtubeMusic.connected) {
-            disconnectAuth.mutate();
-            return;
-          }
-
-          setAuthDialogOpen(true);
-        }}
-      />
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
         <DialogContent>
           <DialogHeader>

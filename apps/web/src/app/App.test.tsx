@@ -26,6 +26,15 @@ class MockEventSource {
 
 function mockApi({
   latestConversion = null,
+  manualCandidates = [
+    {
+      videoId: "ytm-track-1-retry",
+      title: "M83 - Midnight City (Official Video)",
+      artists: ["M83"],
+      durationMs: 244000,
+      resultType: "video",
+    },
+  ],
   matchedConversion = null,
   matchingSettings = {
     autoAcceptThreshold: 0.86,
@@ -35,6 +44,7 @@ function mockApi({
   },
 }: {
   latestConversion?: unknown | (() => MaybePromise<unknown>);
+  manualCandidates?: unknown[];
   matchedConversion?: unknown | (() => MaybePromise<unknown>);
   matchingSettings?: {
     autoAcceptThreshold: number;
@@ -127,15 +137,21 @@ function mockApi({
           typeof latestConversion === "function"
             ? latestConversion()
             : latestConversion;
+        const body = init?.body
+          ? (JSON.parse(init.body.toString()) as {
+              targetPlaylistName?: string;
+            })
+          : {};
 
         if (conversion && typeof conversion === "object") {
           const nextConversion = {
             ...structuredClone(conversion),
             status: "complete",
+            targetPlaylistName:
+              body.targetPlaylistName ?? conversion.targetPlaylistName,
             playlist: {
               playlistId: "PLroadtrip",
-              playlistUrl:
-                "https://music.youtube.com/playlist?list=PLroadtrip",
+              playlistUrl: "https://music.youtube.com/playlist?list=PLroadtrip",
               createdTrackCount: 2,
               skippedTrackCount: 0,
             },
@@ -143,6 +159,72 @@ function mockApi({
           latestConversion = nextConversion;
 
           return new Response(JSON.stringify(nextConversion), { status: 200 });
+        }
+      }
+
+      if (
+        method === "POST" &&
+        url.match(/\/conversions\/.+\/matches\/.+\/candidates$/)
+      ) {
+        const body = init?.body
+          ? (JSON.parse(init.body.toString()) as { query?: string })
+          : {};
+        const trackId = decodeURIComponent(
+          url.match(/\/matches\/([^/]+)\/candidates$/)?.[1] ?? "",
+        );
+
+        return new Response(
+          JSON.stringify({
+            trackId,
+            query: body.query ?? "",
+            candidates: manualCandidates,
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (
+        method === "POST" &&
+        url.match(/\/conversions\/.+\/matches\/.+\/manual$/)
+      ) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+        const body = init?.body
+          ? (JSON.parse(init.body.toString()) as {
+              candidate: {
+                videoId: string;
+                title: string;
+                artists: string[];
+                album?: string;
+                durationMs: number;
+                resultType: "song" | "video";
+              };
+            })
+          : null;
+
+        if (
+          conversion &&
+          typeof conversion === "object" &&
+          "matches" in conversion &&
+          body
+        ) {
+          const nextConversion = structuredClone(conversion);
+          const firstMatch = nextConversion.matches[0];
+          firstMatch.candidate = body.candidate;
+          firstMatch.confidence = 1;
+          firstMatch.status = "accepted";
+          latestConversion = nextConversion;
+
+          return new Response(
+            JSON.stringify({
+              conversion: nextConversion,
+              match: firstMatch,
+              summary: { accepted: 1, review: 1, skipped: 0, total: 2 },
+            }),
+            { status: 200 },
+          );
         }
       }
 
@@ -244,7 +326,7 @@ function importedConversion() {
   return {
     id: "conversion-spicetify-playlist-1",
     sourcePlaylistName: "Road trip",
-    targetPlaylistName: "Road trip - YouTube Music",
+    targetPlaylistName: "Road trip",
     status: "imported",
     createdAt: "2026-04-30T12:00:00.000Z",
     updatedAt: "2026-04-30T12:00:00.000Z",
@@ -321,11 +403,11 @@ describe("app shell", () => {
       screen.getByRole("heading", { name: /convert/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Spotify Desktop" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "Spotify Desktop" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "YouTube Music" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "YouTube Music" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/no playlist imported/i)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /match with ytmusic/i }),
@@ -347,11 +429,17 @@ describe("app shell", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows Spicetify bridge status in settings", async () => {
-    mockApi();
+  it("keeps Spotify and YouTube Music connectors in settings", async () => {
+    mockApi({ latestConversion: importedConversion() });
 
     render(<App initialEntries={["/settings"]} />);
 
+    expect(
+      await screen.findByRole("heading", { name: "Spotify Desktop" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "YouTube Music" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("Spotify import")).toBeInTheDocument();
     expect(screen.getByText("Spicetify bridge")).toBeInTheDocument();
     expect(
@@ -407,7 +495,9 @@ describe("app shell", () => {
 
     render(<App initialEntries={["/settings"]} />);
 
-    await user.click(await screen.findByRole("button", { name: /connect youtube music/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /connect youtube music/i }),
+    );
     await user.type(
       screen.getByLabelText(/request headers/i),
       "accept: */*\ncookie: secret",
@@ -614,7 +704,76 @@ describe("app shell", () => {
     expect(screen.getAllByText("Outro")).toHaveLength(2);
   });
 
-  it("persists review table skip and search actions", async () => {
+  it("lets low-confidence accepted songs be unselected back to review", async () => {
+    const user = userEvent.setup();
+    const conversion = matchedConversion();
+    const firstMatch = conversion.matches[0];
+
+    if (!firstMatch) {
+      throw new Error("Expected a match fixture.");
+    }
+
+    firstMatch.confidence = 0.72;
+    const fetchMock = mockApi({
+      latestConversion: conversion,
+      matchedConversion: conversion,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await screen.findByText(/matches ready for review/i);
+    const acceptButton = screen
+      .getAllByRole("button", { name: /accept match/i })
+      .at(0);
+
+    if (!acceptButton) {
+      throw new Error("Expected an accept button.");
+    }
+
+    await user.click(acceptButton);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url
+              .toString()
+              .includes("/matches/spotify%3Atrack%3Atrack-1/status") &&
+            init?.body?.toString().includes('"status":"accepted"')
+          );
+        }),
+      ).toBe(true),
+    );
+
+    const unselectButton = screen
+      .getAllByRole("button", { name: /unselect match/i })
+      .at(0);
+
+    if (!unselectButton) {
+      throw new Error("Expected an unselect button.");
+    }
+
+    await user.click(unselectButton);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url
+              .toString()
+              .includes("/matches/spotify%3Atrack%3Atrack-1/status") &&
+            init?.body?.toString().includes('"status":"review"')
+          );
+        }),
+      ).toBe(true),
+    );
+  });
+
+  it("persists review table skip actions", async () => {
     const user = userEvent.setup();
     const conversion = matchedConversion();
     const fetchMock = mockApi({
@@ -643,6 +802,23 @@ describe("app shell", () => {
       ),
     ).toBe(true);
     expect(await screen.findByText(/no safe match/i)).toBeInTheDocument();
+  });
+
+  it("opens manual search, searches edited text, and selects a replacement", async () => {
+    const user = userEvent.setup();
+    const conversion = matchedConversion();
+    const fetchMock = mockApi({
+      latestConversion: conversion,
+      matchedConversion: conversion,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await screen.findByText(/matches ready for review/i);
+    const playlistName = screen.getByLabelText(/playlist name/i);
+
+    await user.clear(playlistName);
+    await user.type(playlistName, "Road trip manual verify");
 
     const searchButton = screen
       .getAllByRole("button", { name: /search replacement/i })
@@ -654,16 +830,66 @@ describe("app shell", () => {
 
     await user.click(searchButton);
 
-    expect(
-      fetchMock.mock.calls.some((call) =>
-        call[0]
-          .toString()
-          .includes("/matches/spotify%3Atrack%3Atrack-1/search"),
-      ),
-    ).toBe(true);
+    const dialog = await screen.findByRole("dialog", {
+      name: /manual youtube music search/i,
+    });
+    const searchInput = screen.getByLabelText(/search string/i);
+
+    expect(dialog).toBeInTheDocument();
+    expect(searchInput).toHaveValue("Midnight City M83");
     expect(
       await screen.findByText("M83 - Midnight City (Official Video)"),
     ).toBeInTheDocument();
+
+    await user.clear(searchInput);
+    await user.type(searchInput, "midnight city official audio");
+    await user.click(
+      screen.getByRole("button", { name: /search youtube music/i }),
+    );
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url
+              .toString()
+              .includes("/matches/spotify%3Atrack%3Atrack-1/candidates") &&
+            init?.body
+              ?.toString()
+              .includes('"query":"midnight city official audio"')
+          );
+        }),
+      ).toBe(true),
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /select M83 - Midnight City \(Official Video\)/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          call[0]
+            .toString()
+            .includes("/matches/spotify%3Atrack%3Atrack-1/manual"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByRole("dialog", {
+        name: /manual youtube music search/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("M83 - Midnight City (Official Video)"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/playlist name/i)).toHaveValue(
+      "Road trip manual verify",
+    );
   });
 
   it("creates a YouTube Music playlist after review", async () => {
@@ -676,13 +902,32 @@ describe("app shell", () => {
 
     render(<App initialEntries={["/"]} />);
 
-    await user.click(await screen.findByRole("button", { name: /create playlist/i }));
+    const playlistName = await screen.findByLabelText(/playlist name/i);
+
+    expect(playlistName).toHaveValue("Road trip");
+
+    await user.clear(playlistName);
+    await user.type(playlistName, "Road trip live archive");
+    await user.click(
+      await screen.findByRole("button", { name: /create playlist/i }),
+    );
 
     await waitFor(() =>
       expect(
-        fetchMock.mock.calls.some((call) =>
-          call[0].toString().endsWith("/conversions/conversion-spicetify-playlist-1/create"),
-        ),
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url
+              .toString()
+              .endsWith(
+                "/conversions/conversion-spicetify-playlist-1/create",
+              ) &&
+            init?.body
+              ?.toString()
+              .includes('"targetPlaylistName":"Road trip live archive"')
+          );
+        }),
       ).toBe(true),
     );
     expect(

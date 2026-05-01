@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   accountStatusResponseSchema,
   conversionJobSchema,
+  manualMatchSearchRequestSchema,
+  manualMatchSelectRequestSchema,
   mockConversionJob,
+  playlistCreateRequestSchema,
   spicetifyPlaylistSnapshotSchema,
 } from "./schemas";
 
@@ -82,5 +85,32 @@ describe("shared schemas", () => {
 
     expect(parsed.tracks[0]?.spotifyUri).toBe("spotify:track:track-1");
     expect(parsed.tracks[0]?.position).toBe(1);
+  });
+
+  it("parses playlist creation requests with a custom name", () => {
+    const parsed = playlistCreateRequestSchema.parse({
+      targetPlaylistName: "Road trip",
+    });
+
+    expect(parsed.targetPlaylistName).toBe("Road trip");
+  });
+
+  it("parses manual match search and selection requests", () => {
+    const search = manualMatchSearchRequestSchema.parse({
+      query: "Midnight City M83",
+    });
+    const selection = manualMatchSelectRequestSchema.parse({
+      candidate: {
+        videoId: "ytm-midnight-city",
+        title: "Midnight City",
+        artists: ["M83"],
+        album: "Hurry Up, We're Dreaming",
+        durationMs: 243000,
+        resultType: "song",
+      },
+    });
+
+    expect(search.query).toBe("Midnight City M83");
+    expect(selection.candidate.videoId).toBe("ytm-midnight-city");
   });
 });

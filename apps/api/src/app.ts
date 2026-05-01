@@ -4,10 +4,14 @@ import {
   browserHeadersAuthRequestSchema,
   type ConversionJob,
   latestImportResponseSchema,
+  manualMatchSearchRequestSchema,
+  manualMatchSearchResponseSchema,
+  manualMatchSelectRequestSchema,
   matchDecisionUpdateRequestSchema,
   matchingSettingsPatchSchema,
   matchingSettingsResponseSchema,
   matchingSettingsSchema,
+  playlistCreateRequestSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
 } from "@spottoyt/shared";
@@ -141,8 +145,9 @@ export function buildApp(
   );
   const ytmusicAuth = {
     disconnectAuth:
-      dependencies.ytmusicAuth?.disconnectAuth?.bind(dependencies.ytmusicAuth) ??
-      ytmusic.disconnectAuth.bind(ytmusic),
+      dependencies.ytmusicAuth?.disconnectAuth?.bind(
+        dependencies.ytmusicAuth,
+      ) ?? ytmusic.disconnectAuth.bind(ytmusic),
     getAuthStatus:
       dependencies.ytmusicAuth?.getAuthStatus?.bind(dependencies.ytmusicAuth) ??
       ytmusic.getAuthStatus.bind(ytmusic),
@@ -453,6 +458,72 @@ export function buildApp(
     },
   });
 
+  app.post<{
+    Body: unknown;
+    Params: { id: string; trackId: string };
+  }>("/conversions/:id/matches/:trackId/candidates", {
+    schema: {
+      params: matchParamsSchema,
+    },
+    handler: async (request, reply) => {
+      const parsed = manualMatchSearchRequestSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        reply.code(400);
+        return {
+          error: "Invalid manual match search",
+          message:
+            parsed.error.issues[0]?.message ??
+            "Expected a manual search query.",
+        };
+      }
+
+      try {
+        return manualMatchSearchResponseSchema.parse(
+          await conversions.searchTrackCandidates(
+            request.params.id,
+            request.params.trackId,
+            parsed.data.query,
+          ),
+        );
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
+  app.post<{
+    Body: unknown;
+    Params: { id: string; trackId: string };
+  }>("/conversions/:id/matches/:trackId/manual", {
+    schema: {
+      params: matchParamsSchema,
+    },
+    handler: async (request, reply) => {
+      const parsed = manualMatchSelectRequestSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        reply.code(400);
+        return {
+          error: "Invalid manual match selection",
+          message:
+            parsed.error.issues[0]?.message ??
+            "Expected a YouTube Music candidate.",
+        };
+      }
+
+      try {
+        return conversions.selectManualMatch(
+          request.params.id,
+          request.params.trackId,
+          parsed.data.candidate,
+        );
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
   app.post<{ Params: { id: string; trackId: string } }>(
     "/conversions/:id/matches/:trackId/search",
     {
@@ -472,18 +543,38 @@ export function buildApp(
     },
   );
 
-  app.post<{ Params: { id: string } }>("/conversions/:id/create", {
-    schema: {
-      params: conversionParamsSchema,
+  app.post<{ Body: unknown; Params: { id: string } }>(
+    "/conversions/:id/create",
+    {
+      schema: {
+        params: conversionParamsSchema,
+      },
+      handler: async (request, reply) => {
+        const parsed = playlistCreateRequestSchema.safeParse(
+          request.body ?? {},
+        );
+
+        if (!parsed.success) {
+          reply.code(400);
+          return {
+            error: "Invalid playlist creation request",
+            message:
+              parsed.error.issues[0]?.message ??
+              "Expected playlist creation options.",
+          };
+        }
+
+        try {
+          return await conversions.createPlaylist(
+            request.params.id,
+            parsed.data,
+          );
+        } catch (error) {
+          return handleConversionError(error, reply);
+        }
+      },
     },
-    handler: async (request, reply) => {
-      try {
-        return await conversions.createPlaylist(request.params.id);
-      } catch (error) {
-        return handleConversionError(error, reply);
-      }
-    },
-  });
+  );
 
   return app;
 }
