@@ -752,6 +752,40 @@ describe("app shell", () => {
     expect(
       screen.getByRole("button", { name: /show matching progress/i }),
     ).toBeEnabled();
+
+    const partialConversion = {
+      ...importedConversion(),
+      status: "matching",
+      matches: matchedConversion().matches.slice(0, 1),
+    };
+    await waitFor(() =>
+      expect(
+        eventSourceListeners.get("conversion-match-progress"),
+      ).toHaveLength(1),
+    );
+    await act(async () => {
+      eventSourceListeners
+        .get("conversion-match-progress")
+        ?.forEach((listener) => {
+          listener(
+            new MessageEvent("conversion-match-progress", {
+              data: JSON.stringify({
+                type: "conversion-match-progress",
+                conversionId: partialConversion.id,
+                conversion: partialConversion,
+                match: partialConversion.matches[0],
+                processedTracks: 1,
+                totalTracks: 2,
+              }),
+            }),
+          );
+        });
+    });
+
+    expect(
+      screen.queryByRole("dialog", { name: /matching with youtube music/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
   });
 
   it("stops active matching from the progress dialog", async () => {

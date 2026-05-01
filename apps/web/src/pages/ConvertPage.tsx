@@ -249,8 +249,7 @@ export function ConvertPage() {
       setLiveConversion(payload.conversion);
       setMatchDialog((current) => ({
         ...current,
-        open:
-          current.open || current.sourceConversion?.id === payload.conversionId,
+        open: current.open,
         processedTracks: payload.processedTracks,
         progressConversion: payload.conversion,
         totalTracks: payload.totalTracks,
@@ -272,8 +271,7 @@ export function ConvertPage() {
       setMatchDialog((current) => ({
         ...current,
         completedConversion: payload.conversion,
-        open:
-          current.open || current.sourceConversion?.id === payload.conversionId,
+        open: current.open,
         processedTracks: payload.processedTracks,
         progressConversion: payload.conversion,
         totalTracks: payload.totalTracks,
@@ -295,8 +293,7 @@ export function ConvertPage() {
       setMatchDialog((current) => ({
         ...current,
         cancelledConversion: payload.conversion,
-        open:
-          current.open || current.sourceConversion?.id === payload.conversionId,
+        open: current.open,
         processedTracks: payload.processedTracks,
         progressConversion: payload.conversion,
         totalTracks: payload.totalTracks,
@@ -316,8 +313,7 @@ export function ConvertPage() {
       setMatchDialog((current) => ({
         ...current,
         errorMessage: payload.message,
-        open:
-          current.open || current.sourceConversion?.id === payload.conversionId,
+        open: current.open,
       }));
     });
 
