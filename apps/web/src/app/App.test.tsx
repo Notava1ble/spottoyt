@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 type EventSourceListener = (event: MessageEvent<string>) => void;
+type MaybePromise<T> = T | Promise<T>;
 
 const eventSourceListeners = new Map<string, EventSourceListener[]>();
 
@@ -33,8 +34,8 @@ function mockApi({
     includeVideos: true,
   },
 }: {
-  latestConversion?: unknown | (() => unknown);
-  matchedConversion?: unknown | (() => unknown);
+  latestConversion?: unknown | (() => MaybePromise<unknown>);
+  matchedConversion?: unknown | (() => MaybePromise<unknown>);
   matchingSettings?: {
     autoAcceptThreshold: number;
     reviewThreshold: number;
@@ -65,10 +66,11 @@ function mockApi({
       }
 
       if (url.endsWith("/imports/latest")) {
-        const conversion =
+        const conversion = await Promise.resolve(
           typeof latestConversion === "function"
             ? latestConversion()
-            : latestConversion;
+            : latestConversion,
+        );
 
         return new Response(JSON.stringify({ conversion }), { status: 200 });
       }
@@ -89,10 +91,11 @@ function mockApi({
       }
 
       if (method === "POST" && url.match(/\/conversions\/.+\/match$/)) {
-        const conversion =
+        const conversion = await Promise.resolve(
           typeof matchedConversion === "function"
             ? matchedConversion()
-            : matchedConversion;
+            : matchedConversion,
+        );
 
         return new Response(
           JSON.stringify({
@@ -115,7 +118,11 @@ function mockApi({
           ? (JSON.parse(init.body.toString()) as { status: string })
           : { status: "review" };
 
-        if (conversion && typeof conversion === "object" && "matches" in conversion) {
+        if (
+          conversion &&
+          typeof conversion === "object" &&
+          "matches" in conversion
+        ) {
           const nextConversion = structuredClone(conversion);
           const firstMatch = nextConversion.matches[0];
           firstMatch.status = body.status;
@@ -147,7 +154,11 @@ function mockApi({
             ? latestConversion()
             : latestConversion;
 
-        if (conversion && typeof conversion === "object" && "matches" in conversion) {
+        if (
+          conversion &&
+          typeof conversion === "object" &&
+          "matches" in conversion
+        ) {
           const nextConversion = structuredClone(conversion);
           const firstMatch = nextConversion.matches[0];
           firstMatch.candidate = {
@@ -419,12 +430,68 @@ describe("app shell", () => {
           .endsWith("/conversions/conversion-spicetify-playlist-1/match"),
       ),
     ).toBe(true);
-    expect(
-      await screen.findByText(/matches ready for review/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/matching complete/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /view results/i }));
+
+    expect(screen.getByText(/matches ready for review/i)).toBeInTheDocument();
     expect(screen.getAllByText("Midnight City")).toHaveLength(2);
     expect(screen.getAllByText("Outro")).toHaveLength(2);
     expect(screen.getAllByText("92%")).toHaveLength(2);
+  });
+
+  it("shows matching progress and logs in a dialog before revealing review results", async () => {
+    const user = userEvent.setup();
+    let finishMatching: ((conversion: unknown) => void) | undefined;
+    const matchingResponse = new Promise<unknown>((resolve) => {
+      finishMatching = resolve;
+    });
+
+    mockApi({
+      latestConversion: importedConversion(),
+      matchedConversion: () => matchingResponse,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /match with ytmusic/i }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /matching with youtube music/i,
+    });
+
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+    expect(
+      screen.getByText(/starting youtube music match/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/2 songs queued/i)).toBeInTheDocument();
+
+    await act(async () => {
+      finishMatching?.(matchedConversion());
+    });
+
+    expect(
+      await screen.findByText(/matched midnight city/i),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/matched outro/i)).toBeInTheDocument();
+    expect(await screen.findByText(/matching complete/i)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "100",
+    );
+
+    await user.click(screen.getByRole("button", { name: /view results/i }));
+
+    expect(
+      screen.queryByRole("dialog", { name: /matching with youtube music/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("Midnight City")).toHaveLength(2);
+    expect(screen.getAllByText("Outro")).toHaveLength(2);
   });
 
   it("persists review table skip and search actions", async () => {
@@ -450,7 +517,9 @@ describe("app shell", () => {
 
     expect(
       fetchMock.mock.calls.some((call) =>
-        call[0].toString().includes("/matches/spotify%3Atrack%3Atrack-1/status"),
+        call[0]
+          .toString()
+          .includes("/matches/spotify%3Atrack%3Atrack-1/status"),
       ),
     ).toBe(true);
     expect(await screen.findByText(/no safe match/i)).toBeInTheDocument();
@@ -467,7 +536,9 @@ describe("app shell", () => {
 
     expect(
       fetchMock.mock.calls.some((call) =>
-        call[0].toString().includes("/matches/spotify%3Atrack%3Atrack-1/search"),
+        call[0]
+          .toString()
+          .includes("/matches/spotify%3Atrack%3Atrack-1/search"),
       ),
     ).toBe(true);
     expect(

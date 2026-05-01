@@ -3,8 +3,9 @@ import { Badge } from "@spottoyt/ui/components/badge";
 import { Card, CardContent } from "@spottoyt/ui/components/card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cable, Radio } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
+import { MatchProgressDialog } from "../components/conversion/MatchProgressDialog";
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
 import {
@@ -20,6 +21,17 @@ export function ConvertPage() {
   const [liveConversion, setLiveConversion] = useState<ConversionJob | null>(
     null,
   );
+  const [matchDialog, setMatchDialog] = useState<{
+    errorMessage: string | null;
+    matchedConversion: ConversionJob | null;
+    open: boolean;
+    sourceConversion: ConversionJob | null;
+  }>({
+    errorMessage: null,
+    matchedConversion: null,
+    open: false,
+    sourceConversion: null,
+  });
   const queryClient = useQueryClient();
   const accountStatus = useQuery({
     queryKey: ["auth-status"],
@@ -31,11 +43,24 @@ export function ConvertPage() {
   });
   const conversion = liveConversion ?? latestImport.data?.conversion ?? null;
   const youtubeMusic = accountStatus.data?.youtubeMusic;
+  const finishMatchingDialog = useCallback(
+    (nextConversion: ConversionJob) => {
+      setLiveConversion(nextConversion);
+      void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
+    },
+    [queryClient],
+  );
   const match = useMutation({
     mutationFn: (id: string) => matchConversion(id),
     onMutate: (id) => {
       logClientEvent("info", "web.conversion.match.clicked", {
         conversionId: id,
+      });
+      setMatchDialog({
+        errorMessage: null,
+        matchedConversion: null,
+        open: true,
+        sourceConversion: conversion,
       });
     },
     onSuccess: (response) => {
@@ -44,13 +69,20 @@ export function ConvertPage() {
         status: response.conversion.status,
         matchCount: response.conversion.matches.length,
       });
-      setLiveConversion(response.conversion);
-      void queryClient.invalidateQueries({ queryKey: ["imports-latest"] });
+      setMatchDialog((current) => ({
+        ...current,
+        matchedConversion: response.conversion,
+      }));
     },
     onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
       logClientEvent("error", "web.conversion.match.failed", {
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
+      setMatchDialog((current) => ({
+        ...current,
+        errorMessage: message,
+      }));
     },
   });
   const reset = useMutation({
@@ -184,6 +216,17 @@ export function ConvertPage() {
           />
         </CardContent>
       </Card>
+
+      <MatchProgressDialog
+        errorMessage={matchDialog.errorMessage}
+        matchedConversion={matchDialog.matchedConversion}
+        onFinished={finishMatchingDialog}
+        onOpenChange={(open) =>
+          setMatchDialog((current) => ({ ...current, open }))
+        }
+        open={matchDialog.open}
+        sourceConversion={matchDialog.sourceConversion}
+      />
 
       {conversion ? (
         <MatchReviewTable
