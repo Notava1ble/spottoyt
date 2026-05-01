@@ -385,29 +385,54 @@ class YtmusicWorkerTest(unittest.TestCase):
             match_tracks([], limit=5)
 
     @patch("main.ytmusicapi")
-    def test_auth_setup_writes_browser_headers(self, ytmusicapi):
+    @patch("main.YTMusic")
+    def test_auth_setup_writes_browser_headers_and_validates_account(
+        self, ytmusic, ytmusicapi
+    ):
         ytmusicapi.setup.return_value = "{}"
+        client = Mock()
+        client.get_account_info.return_value = {"accountName": "Visar"}
+        ytmusic.return_value = client
 
         result = auth_setup("auth/browser.json", "accept: */*\ncookie: secret")
 
-        self.assertEqual(result, {"provider": "youtubeMusic", "connected": True, "configured": True})
+        self.assertEqual(
+            result,
+            {
+                "provider": "youtubeMusic",
+                "connected": True,
+                "configured": True,
+                "displayName": "Visar",
+            },
+        )
         ytmusicapi.setup.assert_called_once_with(
             filepath="auth/browser.json",
             headers_raw="accept: */*\ncookie: secret",
         )
+        ytmusic.assert_called_once_with("auth/browser.json")
+        client.get_account_info.assert_called_once_with()
 
     @patch("main.YTMusic")
     @patch("main.os.path.exists")
     def test_auth_status_reports_valid_auth_file(self, exists, ytmusic):
         exists.return_value = True
         client = Mock()
-        client.get_library_playlists.return_value = []
+        client.get_account_info.return_value = {"accountName": "Visar"}
         ytmusic.return_value = client
 
         result = auth_status("auth/browser.json")
 
-        self.assertEqual(result, {"provider": "youtubeMusic", "connected": True, "configured": True})
+        self.assertEqual(
+            result,
+            {
+                "provider": "youtubeMusic",
+                "connected": True,
+                "configured": True,
+                "displayName": "Visar",
+            },
+        )
         ytmusic.assert_called_once_with("auth/browser.json")
+        client.get_account_info.assert_called_once_with()
 
     @patch("main.os.path.exists")
     def test_auth_status_reports_missing_auth_file(self, exists):
@@ -419,11 +444,10 @@ class YtmusicWorkerTest(unittest.TestCase):
 
     @patch("main.YTMusic")
     @patch("main.os.path.exists")
-    def test_create_playlist_creates_private_playlist_and_adds_items(self, exists, ytmusic):
+    def test_create_playlist_creates_private_playlist_with_selected_items(self, exists, ytmusic):
         exists.return_value = True
         client = Mock()
         client.create_playlist.return_value = "PL123"
-        client.add_playlist_items.return_value = "STATUS_SUCCEEDED"
         ytmusic.return_value = client
 
         result = create_playlist(
@@ -445,8 +469,9 @@ class YtmusicWorkerTest(unittest.TestCase):
             "Road trip - YouTube Music",
             "Converted from Spotify by SpottoYT.",
             privacy_status="PRIVATE",
+            video_ids=["song-1", "song-2"],
         )
-        client.add_playlist_items.assert_called_once_with("PL123", ["song-1", "song-2"])
+        client.add_playlist_items.assert_not_called()
 
 
 if __name__ == "__main__":

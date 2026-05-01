@@ -146,6 +146,10 @@ def auth_status(auth_path: str) -> dict[str, Any]:
     if not os.path.exists(auth_path):
         return {"provider": "youtubeMusic", "connected": False, "configured": False}
 
+    return validate_auth(auth_path)
+
+
+def validate_auth(auth_path: str) -> dict[str, Any]:
     if YTMusic is None:
         return {
             "provider": "youtubeMusic",
@@ -156,17 +160,23 @@ def auth_status(auth_path: str) -> dict[str, Any]:
 
     try:
         client = YTMusic(auth_path)
-        client.get_library_playlists(limit=1)
+        account = client.get_account_info()
     except Exception as error:
         log_event("ytmusic.auth.status.failed", message=str(error))
         return {
             "provider": "youtubeMusic",
             "connected": False,
             "configured": True,
-            "error": "YouTube Music authentication failed.",
+            "error": "Reconnect YouTube Music in Settings before creating.",
         }
 
-    return {"provider": "youtubeMusic", "connected": True, "configured": True}
+    status = {"provider": "youtubeMusic", "connected": True, "configured": True}
+    display_name = account.get("accountName") or account.get("channelHandle")
+
+    if display_name:
+        status["displayName"] = str(display_name)
+
+    return status
 
 
 def auth_setup(auth_path: str, headers_raw: str) -> dict[str, Any]:
@@ -178,7 +188,7 @@ def auth_setup(auth_path: str, headers_raw: str) -> dict[str, Any]:
         os.makedirs(parent, exist_ok=True)
 
     ytmusicapi.setup(filepath=auth_path, headers_raw=headers_raw)
-    return {"provider": "youtubeMusic", "connected": True, "configured": True}
+    return validate_auth(auth_path)
 
 
 def create_playlist(
@@ -195,22 +205,33 @@ def create_playlist(
         raise RuntimeError("YouTube Music authentication is not configured.")
 
     client = YTMusic(auth_path)
-    playlist_id = client.create_playlist(
-        title,
-        description,
-        privacy_status=privacy_status,
-    )
+    try:
+        playlist_id = client.create_playlist(
+            title,
+            description,
+            privacy_status=privacy_status,
+            video_ids=video_ids,
+        )
+    except Exception as error:
+        if is_auth_error(error):
+            raise RuntimeError(
+                "Reconnect YouTube Music in Settings before creating."
+            ) from error
+
+        raise
 
     if not isinstance(playlist_id, str):
         raise RuntimeError("YouTube Music returned an invalid playlist response.")
-
-    if video_ids:
-        client.add_playlist_items(playlist_id, video_ids)
 
     return {
         "playlistId": playlist_id,
         "playlistUrl": f"https://music.youtube.com/playlist?list={playlist_id}",
     }
+
+
+def is_auth_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "401" in message or "unauthorized" in message or "sign in" in message
 
 
 def build_search_queries(

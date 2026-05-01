@@ -16,29 +16,40 @@ type PlaylistImportPanelProps = {
   latestConversion?: ConversionJob | null;
   matching?: boolean;
   creating?: boolean;
+  checkingYoutubeMusic?: boolean;
+  createErrorMessage?: string | null;
   onMatch?: () => void;
   onCreate?: (targetPlaylistName: string) => void;
   onReset?: () => void;
   resetting?: boolean;
+  youtubeMusicConnected?: boolean;
 };
 
 export function PlaylistImportPanel({
   latestConversion,
+  checkingYoutubeMusic = false,
+  createErrorMessage = null,
   creating = false,
   matching = false,
   onCreate,
   onMatch,
   onReset,
   resetting = false,
+  youtubeMusicConnected = false,
 }: PlaylistImportPanelProps) {
   const [playlistName, setPlaylistName] = useState("");
   const lastSyncedConversionId = useRef<string | null>(null);
   const trackCount = latestConversion?.tracks.length ?? 0;
   const matchedTrackCount = latestConversion?.matches.length ?? 0;
-  const hasUnmatchedTracks =
-    latestConversion ? matchedTrackCount < latestConversion.tracks.length : false;
+  const hasUnmatchedTracks = latestConversion
+    ? matchedTrackCount < latestConversion.tracks.length
+    : false;
   const canContinueMatching =
     latestConversion?.status === "reviewing" && hasUnmatchedTracks;
+  const acceptedTrackCount =
+    latestConversion?.matches.filter(
+      (match) => match.status === "accepted" && match.candidate,
+    ).length ?? 0;
   const statusLabel =
     latestConversion?.status === "reviewing"
       ? hasUnmatchedTracks
@@ -48,7 +59,20 @@ export function PlaylistImportPanel({
         ? "Imported"
         : "Waiting";
   const canCreate =
-    latestConversion?.status === "reviewing" && playlistName.trim().length > 0;
+    latestConversion?.status === "reviewing" &&
+    playlistName.trim().length > 0 &&
+    acceptedTrackCount > 0 &&
+    youtubeMusicConnected;
+  const createBlockedMessage =
+    latestConversion?.status === "reviewing"
+      ? checkingYoutubeMusic
+        ? "Checking YouTube Music connection."
+        : !youtubeMusicConnected
+          ? "Connect YouTube Music in Settings before creating."
+          : acceptedTrackCount === 0
+            ? "Select at least one YouTube Music match before creating."
+            : null
+      : null;
 
   useEffect(() => {
     const nextConversionId = latestConversion?.id ?? null;
@@ -84,17 +108,30 @@ export function PlaylistImportPanel({
           </div>
         </div>
         {latestConversion?.status === "reviewing" ? (
-          <label className="grid max-w-md gap-1" htmlFor="playlist-name">
-            <span className="font-medium text-foreground text-sm">
-              Playlist name
-            </span>
-            <Input
-              disabled={creating}
-              id="playlist-name"
-              onChange={(event) => setPlaylistName(event.target.value)}
-              value={playlistName}
-            />
-          </label>
+          <div className="grid gap-2">
+            <label className="grid max-w-md gap-1" htmlFor="playlist-name">
+              <span className="font-medium text-foreground text-sm">
+                Playlist name
+              </span>
+              <Input
+                disabled={creating}
+                id="playlist-name"
+                onChange={(event) => setPlaylistName(event.target.value)}
+                value={playlistName}
+              />
+            </label>
+            <p className="text-muted-foreground text-sm">
+              {acceptedTrackCount} selected for creation.
+            </p>
+          </div>
+        ) : null}
+        {createErrorMessage ? (
+          <p
+            className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm"
+            role="alert"
+          >
+            {createErrorMessage}
+          </p>
         ) : null}
         {latestConversion ? (
           <div className="flex flex-wrap gap-2">
@@ -140,6 +177,11 @@ export function PlaylistImportPanel({
               Reset import
             </Button>
           </div>
+        ) : null}
+        {createBlockedMessage ? (
+          <p className="text-muted-foreground text-sm">
+            {createBlockedMessage}
+          </p>
         ) : null}
       </div>
       <div className="flex flex-col justify-center gap-3 rounded-md border bg-background p-4">

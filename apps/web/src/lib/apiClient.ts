@@ -50,13 +50,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const durationMs = Math.round(performance.now() - startedAt);
 
     if (!response.ok) {
+      const message = await readApiErrorMessage(response);
       logClientEvent("warn", "web.api.request.failed", {
         method,
         path,
         statusCode: response.status,
         durationMs,
+        message,
       });
-      throw new Error(`Request failed: ${response.status}`);
+      throw new Error(message);
     }
 
     logClientEvent("debug", "web.api.request.completed", {
@@ -75,6 +77,32 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     });
     throw error;
   }
+}
+
+async function readApiErrorMessage(response: Response) {
+  try {
+    const body = (await response.json()) as unknown;
+
+    if (body && typeof body === "object" && "message" in body) {
+      const message = body.message;
+
+      if (typeof message === "string" && message.trim()) {
+        return message;
+      }
+    }
+
+    if (body && typeof body === "object" && "error" in body) {
+      const error = body.error;
+
+      if (typeof error === "string" && error.trim()) {
+        return error;
+      }
+    }
+  } catch {
+    // Keep the transport error useful even when the body is empty or non-JSON.
+  }
+
+  return `Request failed: ${response.status}`;
 }
 
 export function getAccountStatus() {

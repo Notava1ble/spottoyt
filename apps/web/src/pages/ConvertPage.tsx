@@ -12,6 +12,7 @@ import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPane
 import {
   cancelMatchConversion,
   createPlaylist,
+  getAccountStatus,
   getEventsUrl,
   getLatestImport,
   matchConversion,
@@ -21,6 +22,9 @@ import { logClientEvent } from "../lib/logger";
 
 export function ConvertPage() {
   const [liveConversion, setLiveConversion] = useState<ConversionJob | null>(
+    null,
+  );
+  const [createErrorMessage, setCreateErrorMessage] = useState<string | null>(
     null,
   );
   const [matchDialog, setMatchDialog] = useState<{
@@ -43,11 +47,16 @@ export function ConvertPage() {
     totalTracks: 0,
   });
   const queryClient = useQueryClient();
+  const accountStatus = useQuery({
+    queryKey: ["auth-status"],
+    queryFn: getAccountStatus,
+  });
   const latestImport = useQuery({
     queryKey: ["imports-latest"],
     queryFn: getLatestImport,
   });
   const conversion = liveConversion ?? latestImport.data?.conversion ?? null;
+  const youtubeMusic = accountStatus.data?.youtubeMusic;
   const finishMatchingDialog = useCallback(
     (nextConversion: ConversionJob) => {
       setLiveConversion(nextConversion);
@@ -148,6 +157,7 @@ export function ConvertPage() {
       targetPlaylistName: string;
     }) => createPlaylist(id, { targetPlaylistName }),
     onMutate: ({ id, targetPlaylistName }) => {
+      setCreateErrorMessage(null);
       logClientEvent("info", "web.conversion.create.clicked", {
         conversionId: id,
         targetPlaylistName,
@@ -162,11 +172,14 @@ export function ConvertPage() {
       queryClient.setQueryData(["imports-latest"], {
         conversion: nextConversion,
       });
+      setCreateErrorMessage(null);
     },
     onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
       logClientEvent("error", "web.conversion.create.failed", {
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
+      setCreateErrorMessage(message);
     },
   });
   const reset = useMutation({
@@ -198,6 +211,14 @@ export function ConvertPage() {
     !matchDialog.completedConversion &&
     !matchDialog.errorMessage;
   const matchingInBackground = matchingActive && !matchDialog.open;
+
+  useEffect(() => {
+    if (accountStatus.error) {
+      logClientEvent("error", "web.query.account_status.failed", {
+        message: accountStatus.error.message,
+      });
+    }
+  }, [accountStatus.error]);
 
   useEffect(() => {
     if (latestImport.error) {
@@ -349,7 +370,9 @@ export function ConvertPage() {
       <Card>
         <CardContent className="p-5">
           <PlaylistImportPanel
+            createErrorMessage={createErrorMessage}
             creating={create.isPending}
+            checkingYoutubeMusic={accountStatus.isLoading}
             latestConversion={conversion}
             matching={match.isPending}
             onCreate={(targetPlaylistName) => {
@@ -367,6 +390,7 @@ export function ConvertPage() {
             }}
             onReset={() => reset.mutate()}
             resetting={reset.isPending}
+            youtubeMusicConnected={youtubeMusic?.connected === true}
           />
         </CardContent>
       </Card>

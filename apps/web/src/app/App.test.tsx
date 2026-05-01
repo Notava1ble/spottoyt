@@ -25,6 +25,7 @@ class MockEventSource {
 }
 
 function mockApi({
+  createError = null,
   latestConversion = null,
   manualCandidates = [
     {
@@ -42,7 +43,21 @@ function mockApi({
     searchLimit: 10,
     includeVideos: true,
   },
+  youtubeMusicSetupStatus = {
+    provider: "youtubeMusic",
+    connected: true,
+    configured: true,
+  },
+  youtubeMusicStatus = {
+    provider: "youtubeMusic",
+    connected: false,
+    configured: false,
+  },
 }: {
+  createError?: {
+    body: { error: string; message: string };
+    status: number;
+  } | null;
   latestConversion?: unknown | (() => MaybePromise<unknown>);
   manualCandidates?: unknown[];
   matchedConversion?: unknown | (() => MaybePromise<unknown>);
@@ -51,6 +66,20 @@ function mockApi({
     reviewThreshold: number;
     searchLimit: number;
     includeVideos: boolean;
+  };
+  youtubeMusicSetupStatus?: {
+    provider: "youtubeMusic";
+    connected: boolean;
+    configured?: boolean;
+    displayName?: string;
+    error?: string;
+  };
+  youtubeMusicStatus?: {
+    provider: "youtubeMusic";
+    connected: boolean;
+    configured?: boolean;
+    displayName?: string;
+    error?: string;
   };
 } = {}) {
   const fetchMock = vi.fn(
@@ -65,11 +94,7 @@ function mockApi({
       if (url.endsWith("/auth/status")) {
         return new Response(
           JSON.stringify({
-            youtubeMusic: {
-              provider: "youtubeMusic",
-              connected: false,
-              configured: false,
-            },
+            youtubeMusic: youtubeMusicStatus,
           }),
           { status: 200 },
         );
@@ -81,11 +106,7 @@ function mockApi({
       ) {
         return new Response(
           JSON.stringify({
-            youtubeMusic: {
-              provider: "youtubeMusic",
-              connected: true,
-              configured: true,
-            },
+            youtubeMusic: youtubeMusicSetupStatus,
           }),
           { status: 200 },
         );
@@ -148,6 +169,12 @@ function mockApi({
       }
 
       if (method === "POST" && url.match(/\/conversions\/.+\/create$/)) {
+        if (createError) {
+          return new Response(JSON.stringify(createError.body), {
+            status: createError.status,
+          });
+        }
+
         const conversion =
           typeof latestConversion === "function"
             ? latestConversion()
@@ -390,6 +417,18 @@ function matchedConversion() {
   };
 }
 
+function acceptedConversion() {
+  const conversion = matchedConversion();
+
+  return {
+    ...conversion,
+    matches: conversion.matches.map((match) => ({
+      ...match,
+      status: "accepted",
+    })),
+  };
+}
+
 function partiallyMatchedConversion() {
   const imported = importedConversion();
   const [firstTrack] = imported.tracks;
@@ -555,6 +594,36 @@ describe("app shell", () => {
       ).toBe(true),
     );
     expect(await screen.findByText("Connected")).toBeInTheDocument();
+  });
+
+  it("keeps YouTube Music settings open when pasted headers do not validate", async () => {
+    const user = userEvent.setup();
+    mockApi({
+      youtubeMusicSetupStatus: {
+        provider: "youtubeMusic",
+        connected: false,
+        configured: true,
+        error: "Reconnect YouTube Music in Settings before creating.",
+      },
+    });
+
+    render(<App initialEntries={["/settings"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /connect youtube music/i }),
+    );
+    await user.type(
+      screen.getByLabelText(/request headers/i),
+      "accept: */*\ncookie: stale",
+    );
+    await user.click(screen.getByRole("button", { name: /save connection/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Reconnect YouTube Music in Settings before creating.",
+    );
+    expect(
+      screen.getByRole("dialog", { name: /connect youtube music/i }),
+    ).toBeInTheDocument();
   });
 
   it("starts from the Spicetify import surface in convert", async () => {
@@ -830,7 +899,9 @@ describe("app shell", () => {
         fetchMock.mock.calls.some((call) =>
           call[0]
             .toString()
-            .endsWith("/conversions/conversion-spicetify-playlist-1/match/cancel"),
+            .endsWith(
+              "/conversions/conversion-spicetify-playlist-1/match/cancel",
+            ),
         ),
       ).toBe(true),
     );
@@ -1055,10 +1126,16 @@ describe("app shell", () => {
 
   it("creates a YouTube Music playlist after review", async () => {
     const user = userEvent.setup();
-    const conversion = matchedConversion();
+    const conversion = acceptedConversion();
     const fetchMock = mockApi({
       latestConversion: conversion,
       matchedConversion: conversion,
+      youtubeMusicStatus: {
+        provider: "youtubeMusic",
+        connected: true,
+        configured: true,
+        displayName: "Visar",
+      },
     });
 
     render(<App initialEntries={["/"]} />);
@@ -1096,6 +1173,38 @@ describe("app shell", () => {
     ).toHaveAttribute(
       "href",
       "https://music.youtube.com/playlist?list=PLroadtrip",
+    );
+  });
+
+  it("shows the YouTube Music auth failure when playlist creation is rejected", async () => {
+    const user = userEvent.setup();
+    const conversion = acceptedConversion();
+    mockApi({
+      createError: {
+        status: 503,
+        body: {
+          error: "YouTube Music unavailable",
+          message: "Reconnect YouTube Music in Settings before creating.",
+        },
+      },
+      latestConversion: conversion,
+      matchedConversion: conversion,
+      youtubeMusicStatus: {
+        provider: "youtubeMusic",
+        connected: true,
+        configured: true,
+        displayName: "Visar",
+      },
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /create playlist/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Reconnect YouTube Music in Settings before creating.",
     );
   });
 });

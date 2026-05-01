@@ -1,3 +1,4 @@
+import { Button } from "@spottoyt/ui/components/button";
 import {
   Card,
   CardContent,
@@ -5,8 +6,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@spottoyt/ui/components/card";
-import { Button } from "@spottoyt/ui/components/button";
-import { Input } from "@spottoyt/ui/components/input";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@spottoyt/ui/components/dialog";
+import { Input } from "@spottoyt/ui/components/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cable, Radio } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -55,6 +55,7 @@ export function SettingsPage() {
     reviewThreshold: "",
     searchLimit: "",
   });
+  const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [headersRaw, setHeadersRaw] = useState("");
   const saveMatchingSettings = useMutation({
@@ -73,10 +74,28 @@ export function SettingsPage() {
   const saveYoutubeMusicAuth = useMutation({
     mutationFn: () =>
       setupYoutubeMusicBrowserHeaders({ headersRaw: headersRaw.trim() }),
+    onMutate: () => {
+      setAuthErrorMessage(null);
+    },
     onSuccess: (response) => {
       queryClient.setQueryData(["auth-status"], response);
-      setHeadersRaw("");
-      setAuthDialogOpen(false);
+
+      if (response.youtubeMusic.connected) {
+        setHeadersRaw("");
+        setAuthDialogOpen(false);
+        return;
+      }
+
+      setAuthErrorMessage(
+        response.youtubeMusic.error ?? "YouTube Music connection failed.",
+      );
+    },
+    onError: (error) => {
+      setAuthErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "YouTube Music connection failed.",
+      );
     },
   });
   const disconnectAuth = useMutation({
@@ -146,6 +165,7 @@ export function SettingsPage() {
             }
 
             setAuthDialogOpen(true);
+            setAuthErrorMessage(null);
           }}
         />
       </div>
@@ -176,7 +196,16 @@ export function SettingsPage() {
           ))}
         </CardContent>
       </Card>
-      <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+      <Dialog
+        open={authDialogOpen}
+        onOpenChange={(open) => {
+          setAuthDialogOpen(open);
+
+          if (open) {
+            setAuthErrorMessage(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Connect YouTube Music</DialogTitle>
@@ -196,9 +225,9 @@ export function SettingsPage() {
               value={headersRaw}
             />
           </label>
-          {saveYoutubeMusicAuth.isError ? (
-            <p className="text-destructive text-sm">
-              YouTube Music connection failed.
+          {authErrorMessage ? (
+            <p className="text-destructive text-sm" role="alert">
+              {authErrorMessage}
             </p>
           ) : null}
           <DialogFooter>
