@@ -9,8 +9,8 @@ import {
   MatchingSettingsService,
 } from "./services/matching-settings.service";
 import {
-  YtmusicService,
   type YtmusicSearchClient,
+  YtmusicService,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
 
@@ -52,6 +52,25 @@ function spicetifySnapshot(
         position: 1,
       },
     ],
+  };
+}
+
+function spicetifySnapshotWithTracks(
+  playlistName: string,
+  trackTitles: string[],
+) {
+  return {
+    ...spicetifySnapshot(playlistName, trackTitles[0]),
+    tracks: trackTitles.map((title, index) => ({
+      spotifyUri: `spotify:track:${title.toLowerCase().replaceAll(" ", "-")}`,
+      title,
+      artists: ["M83"],
+      album: "Hurry Up, We're Dreaming",
+      durationMs: 243000 + index * 1000,
+      isrc: `ISRC${index}`,
+      explicit: false,
+      position: index + 1,
+    })),
   };
 }
 
@@ -343,6 +362,105 @@ describe("api shell", () => {
       "Midnight City",
     );
     expect(matched.json().summary.total).toBe(1);
+
+    await app.close();
+  });
+
+  it("emits per-track match decisions before the full match request completes", async () => {
+    let releaseSecondTrack: (() => void) | undefined;
+    let markSecondTrackStarted: (() => void) | undefined;
+    const secondTrackStarted = new Promise<void>((resolveStarted) => {
+      markSecondTrackStarted = resolveStarted;
+    });
+    const releaseSecondTrackPromise = new Promise<void>((resolveRelease) => {
+      releaseSecondTrack = resolveRelease;
+    });
+    const events: Array<{ event: string; fields?: Record<string, unknown> }> =
+      [];
+    const captureEvent = (
+      _level: string,
+      _source: string,
+      event: string,
+      fields?: Record<string, unknown>,
+    ) => {
+      events.push({ event, fields });
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService(
+            {
+              async findCandidatesForTracks(tracks) {
+                const [track] = tracks;
+
+                if (track?.title === "Outro") {
+                  markSecondTrackStarted?.();
+                  await releaseSecondTrackPromise;
+                }
+
+                return tracks.map((item) => ({
+                  trackId: item.id,
+                  candidates: [
+                    {
+                      videoId: `ytm-${item.title.toLowerCase().replaceAll(" ", "-")}`,
+                      title: item.title,
+                      artists: item.artists,
+                      album: item.album,
+                      durationMs: item.durationMs,
+                      resultType: "song" as const,
+                    },
+                  ],
+                }));
+              },
+            },
+            captureEvent,
+          ),
+          undefined,
+          captureEvent,
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshotWithTracks("Road trip", [
+        "Midnight City",
+        "Outro",
+      ]),
+    });
+    const matchRequest = app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    const reachedSecondTrackBeforeCompletion = await Promise.race([
+      secondTrackStarted.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 25)),
+    ]);
+
+    expect(reachedSecondTrackBeforeCompletion).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: "conversion.match.decision",
+        fields: expect.objectContaining({
+          trackId: "spotify:track:midnight-city",
+        }),
+      }),
+    );
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        event: "conversion.match.completed",
+      }),
+    );
+
+    releaseSecondTrack?.();
+    const matched = await matchRequest;
+
+    expect(matched.statusCode).toBe(200);
+    expect(matched.json().conversion.matches).toHaveLength(2);
 
     await app.close();
   });

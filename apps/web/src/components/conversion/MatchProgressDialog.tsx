@@ -11,16 +11,18 @@ import {
 } from "@spottoyt/ui/components/dialog";
 import { Progress } from "@spottoyt/ui/components/progress";
 import { CheckCircle2, CircleAlert, CircleDotDashed } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { formatConfidence, formatDuration } from "../../lib/formatters";
 
 type MatchProgressDialogProps = {
+  completedConversion?: ConversionJob | null;
   errorMessage?: string | null;
-  matchedConversion?: ConversionJob | null;
-  onFinished: (conversion: ConversionJob) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  processedTracks?: number;
+  progressConversion?: ConversionJob | null;
   sourceConversion?: ConversionJob | null;
+  totalTracks?: number;
 };
 
 type LogEntry = {
@@ -32,148 +34,49 @@ type LogEntry = {
 
 type DialogPhase = "matching" | "done" | "failed";
 
-const MATCH_LOG_DELAY_MS = 80;
-
 export function MatchProgressDialog({
+  completedConversion,
   errorMessage,
-  matchedConversion,
-  onFinished,
   onOpenChange,
   open,
+  processedTracks,
+  progressConversion,
   sourceConversion,
+  totalTracks,
 }: MatchProgressDialogProps) {
-  const totalTracks = sourceConversion?.tracks.length ?? 0;
-  const [phase, setPhase] = useState<DialogPhase>("matching");
-  const [processedCount, setProcessedCount] = useState(0);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-
-  const matchLogEntries = useMemo(() => {
-    if (!matchedConversion) {
-      return [];
-    }
-
-    return matchedConversion.tracks.map((track, index) => {
-      const match = matchedConversion.matches.find(
-        (item) => item.trackId === track.id,
-      );
-
-      return buildTrackLogEntry(match, track, index);
-    });
-  }, [matchedConversion]);
-
-  useEffect(() => {
-    if (!open || !sourceConversion) {
-      return;
-    }
-
-    setPhase("matching");
-    setProcessedCount(0);
-    setLogs([
-      {
-        id: "start",
-        message: "Starting YouTube Music match.",
-        tone: "active",
-      },
-      {
-        id: "queued",
-        detail: sourceConversion.sourcePlaylistName,
-        message: `${sourceConversion.tracks.length} ${
-          sourceConversion.tracks.length === 1 ? "song" : "songs"
-        } queued.`,
-        tone: "active",
-      },
-    ]);
-  }, [open, sourceConversion]);
-
-  useEffect(() => {
-    if (!(open && errorMessage)) {
-      return;
-    }
-
-    setPhase("failed");
-    setLogs((current) => [
-      ...current,
-      {
-        id: "failed",
-        detail: errorMessage,
-        message: "Matching failed.",
-        tone: "error",
-      },
-    ]);
-  }, [errorMessage, open]);
-
-  useEffect(() => {
-    if (!(open && matchedConversion)) {
-      return;
-    }
-
-    const completedConversion = matchedConversion;
-
-    if (matchLogEntries.length === 0) {
-      setLogs((current) => [
-        ...current,
-        {
-          id: "complete",
-          detail: "No songs needed matching.",
-          message: "Matching complete.",
-          tone: "done",
-        },
-      ]);
-      setPhase("done");
-      onFinished(completedConversion);
-      return;
-    }
-
-    let cancelled = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let index = 0;
-
-    function pushNextLog() {
-      if (cancelled) {
-        return;
-      }
-
-      const nextLog = matchLogEntries[index];
-
-      if (nextLog) {
-        setLogs((current) => [...current, nextLog]);
-        setProcessedCount(index + 1);
-        index += 1;
-        timeout = setTimeout(pushNextLog, MATCH_LOG_DELAY_MS);
-        return;
-      }
-
-      setLogs((current) => [
-        ...current,
-        {
-          id: "complete",
-          detail: `${completedConversion.matches.length} ${
-            completedConversion.matches.length === 1 ? "match" : "matches"
-          } ready for review.`,
-          message: "Matching complete.",
-          tone: "done",
-        },
-      ]);
-      setPhase("done");
-      onFinished(completedConversion);
-    }
-
-    timeout = setTimeout(pushNextLog, MATCH_LOG_DELAY_MS);
-
-    return () => {
-      cancelled = true;
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, [matchLogEntries, matchedConversion, onFinished, open]);
-
+  const activeConversion =
+    completedConversion ?? progressConversion ?? sourceConversion ?? null;
+  const visibleTotalTracks =
+    totalTracks ??
+    sourceConversion?.tracks.length ??
+    activeConversion?.tracks.length ??
+    0;
+  const visibleProcessedTracks =
+    processedTracks ??
+    completedConversion?.matches.length ??
+    progressConversion?.matches.length ??
+    0;
+  const phase: DialogPhase = errorMessage
+    ? "failed"
+    : completedConversion
+      ? "done"
+      : "matching";
+  const logs = useMemo(
+    () =>
+      buildLogs({
+        activeConversion,
+        completedConversion,
+        errorMessage,
+        sourceConversion,
+      }),
+    [activeConversion, completedConversion, errorMessage, sourceConversion],
+  );
   const canClose = phase !== "matching";
   const progressValue =
     phase === "done"
       ? 100
-      : totalTracks > 0
-        ? Math.round((processedCount / totalTracks) * 100)
+      : visibleTotalTracks > 0
+        ? Math.round((visibleProcessedTracks / visibleTotalTracks) * 100)
         : 0;
 
   return (
@@ -210,7 +113,7 @@ export function MatchProgressDialog({
               </DialogDescription>
             </div>
             <Badge variant={phase === "done" ? "default" : "secondary"}>
-              {processedCount}/{totalTracks}
+              {visibleProcessedTracks}/{visibleTotalTracks}
             </Badge>
           </div>
         </DialogHeader>
@@ -272,6 +175,70 @@ export function MatchProgressDialog({
   );
 }
 
+function buildLogs({
+  activeConversion,
+  completedConversion,
+  errorMessage,
+  sourceConversion,
+}: {
+  activeConversion?: ConversionJob | null;
+  completedConversion?: ConversionJob | null;
+  errorMessage?: string | null;
+  sourceConversion?: ConversionJob | null;
+}) {
+  const entries: LogEntry[] = [];
+
+  if (sourceConversion) {
+    entries.push(
+      {
+        id: "start",
+        message: "Starting YouTube Music match.",
+        tone: "active",
+      },
+      {
+        id: "queued",
+        detail: sourceConversion.sourcePlaylistName,
+        message: `${sourceConversion.tracks.length} ${
+          sourceConversion.tracks.length === 1 ? "song" : "songs"
+        } queued.`,
+        tone: "active",
+      },
+    );
+  }
+
+  if (activeConversion) {
+    entries.push(
+      ...activeConversion.matches.map((match, index) => {
+        const track = activeConversion.tracks.find(
+          (item) => item.id === match.trackId,
+        );
+
+        return buildTrackLogEntry(match, track, index);
+      }),
+    );
+  }
+
+  if (errorMessage) {
+    entries.push({
+      id: "failed",
+      detail: errorMessage,
+      message: "Matching failed.",
+      tone: "error",
+    });
+  } else if (completedConversion) {
+    entries.push({
+      id: "complete",
+      detail: `${completedConversion.matches.length} ${
+        completedConversion.matches.length === 1 ? "match" : "matches"
+      } ready for review.`,
+      message: "Matching complete.",
+      tone: "done",
+    });
+  }
+
+  return entries;
+}
+
 function LogIcon({ tone }: { tone: LogEntry["tone"] }) {
   if (tone === "done") {
     return <CheckCircle2 className="mt-0.5 text-primary" aria-hidden="true" />;
@@ -292,27 +259,29 @@ function LogIcon({ tone }: { tone: LogEntry["tone"] }) {
 }
 
 function buildTrackLogEntry(
-  match: MatchDecision | undefined,
-  track: ConversionJob["tracks"][number],
+  match: MatchDecision,
+  track: ConversionJob["tracks"][number] | undefined,
   index: number,
 ): LogEntry {
-  if (!match?.candidate) {
+  if (!match.candidate) {
     return {
-      id: `${track.id}-${index}`,
-      detail: `${track.artists.join(", ")} - no safe YouTube Music candidate`,
-      message: `Skipped ${track.title}.`,
+      id: `${match.trackId}-${index}`,
+      detail: `${
+        track?.artists.join(", ") ?? "Unknown artist"
+      } - no safe YouTube Music candidate`,
+      message: `Skipped ${track?.title ?? match.trackId}.`,
       tone: "done",
     };
   }
 
   return {
-    id: `${track.id}-${index}`,
+    id: `${match.trackId}-${index}`,
     detail: `${match.candidate.title} by ${match.candidate.artists.join(
       ", ",
     )} - ${formatConfidence(match.confidence)} confidence - ${
       match.status
     } - ${formatDuration(match.candidate.durationMs)}`,
-    message: `Matched ${track.title}.`,
+    message: `Matched ${track?.title ?? match.trackId}.`,
     tone: "done",
   };
 }

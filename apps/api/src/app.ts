@@ -11,14 +11,6 @@ import {
   spicetifyPlaylistSnapshotSchema,
 } from "@spottoyt/shared";
 import Fastify, { type FastifyServerOptions } from "fastify";
-import {
-  ConversionNotFoundError,
-  ConversionService,
-  InvalidMatchDecisionError,
-  ImportLockedError,
-  MatchNotFoundError,
-  TrackNotFoundError,
-} from "./services/conversion.service";
 import { env } from "./config/env";
 import { registerClientLogRoutes } from "./logging/client-log.routes";
 import {
@@ -26,11 +18,19 @@ import {
   createLogEventWriter,
   type LogEventWriter,
 } from "./logging/logger";
+import {
+  ConversionNotFoundError,
+  ConversionService,
+  ImportLockedError,
+  InvalidMatchDecisionError,
+  MatchNotFoundError,
+  TrackNotFoundError,
+} from "./services/conversion.service";
 import { ImportEventsService } from "./services/import-events.service";
 import { MatchingSettingsService } from "./services/matching-settings.service";
 import {
-  YtmusicService,
   type YtmusicSearchClient,
+  YtmusicService,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
 import { getDatabaseStatus } from "./storage/db";
@@ -321,8 +321,41 @@ export function buildApp(
     },
     handler: async (request, reply) => {
       try {
-        return await conversions.matchConversion(request.params.id);
+        const conversion = conversions.getConversion(request.params.id);
+        importEvents.publish({
+          type: "conversion-match-started",
+          conversionId: conversion.id,
+          totalTracks: conversion.tracks.length,
+        });
+
+        const result = await conversions.matchConversion(request.params.id, {
+          onProgress: (progress) => {
+            importEvents.publish({
+              type: "conversion-match-progress",
+              conversionId: progress.conversion.id,
+              conversion: progress.conversion,
+              match: progress.match,
+              processedTracks: progress.processedTracks,
+              totalTracks: progress.totalTracks,
+            });
+          },
+        });
+
+        importEvents.publish({
+          type: "conversion-match-completed",
+          conversionId: result.conversion.id,
+          conversion: result.conversion,
+          processedTracks: result.conversion.matches.length,
+          totalTracks: result.conversion.tracks.length,
+        });
+
+        return result;
       } catch (error) {
+        importEvents.publish({
+          type: "conversion-match-failed",
+          conversionId: request.params.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
         return handleConversionError(error, reply);
       }
     },
@@ -406,7 +439,10 @@ function handleConversionError(
     return { error: "Conversion not found" };
   }
 
-  if (error instanceof TrackNotFoundError || error instanceof MatchNotFoundError) {
+  if (
+    error instanceof TrackNotFoundError ||
+    error instanceof MatchNotFoundError
+  ) {
     reply.code(404);
     return { error: error.message };
   }

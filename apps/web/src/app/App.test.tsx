@@ -450,6 +450,7 @@ describe("app shell", () => {
       latestConversion: importedConversion(),
       matchedConversion: () => matchingResponse,
     });
+    vi.stubGlobal("EventSource", MockEventSource);
 
     render(<App initialEntries={["/"]} />);
 
@@ -471,13 +472,63 @@ describe("app shell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/2 songs queued/i)).toBeInTheDocument();
 
+    const partialConversion = {
+      ...importedConversion(),
+      status: "matching",
+      matches: matchedConversion().matches.slice(0, 1),
+    };
+    await waitFor(() =>
+      expect(
+        eventSourceListeners.get("conversion-match-progress"),
+      ).toHaveLength(1),
+    );
     await act(async () => {
-      finishMatching?.(matchedConversion());
+      eventSourceListeners
+        .get("conversion-match-progress")
+        ?.forEach((listener) => {
+          listener(
+            new MessageEvent("conversion-match-progress", {
+              data: JSON.stringify({
+                type: "conversion-match-progress",
+                conversionId: partialConversion.id,
+                conversion: partialConversion,
+                match: partialConversion.matches[0],
+                processedTracks: 1,
+                totalTracks: 2,
+              }),
+            }),
+          );
+        });
     });
 
     expect(
       await screen.findByText(/matched midnight city/i),
     ).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "50",
+    );
+    expect(screen.queryByText(/matched outro/i)).not.toBeInTheDocument();
+
+    await act(async () => {
+      eventSourceListeners
+        .get("conversion-match-completed")
+        ?.forEach((listener) => {
+          listener(
+            new MessageEvent("conversion-match-completed", {
+              data: JSON.stringify({
+                type: "conversion-match-completed",
+                conversionId: matchedConversion().id,
+                conversion: matchedConversion(),
+                processedTracks: 2,
+                totalTracks: 2,
+              }),
+            }),
+          );
+        });
+      finishMatching?.(matchedConversion());
+    });
+
     expect(await screen.findByText(/matched outro/i)).toBeInTheDocument();
     expect(await screen.findByText(/matching complete/i)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute(

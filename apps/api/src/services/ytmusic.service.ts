@@ -1,20 +1,17 @@
-import {
-  type MatchingSettings,
-  type MatchDecision,
-  matchDecisionSchema,
-  mockConversionJob,
-  type SpotifyTrack,
-  type YtmusicCandidate,
-} from "@spottoyt/shared";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { platform } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
-  type LogEventWriter,
-  noopLogEvent,
-} from "../logging/logger";
+  type MatchDecision,
+  type MatchingSettings,
+  matchDecisionSchema,
+  mockConversionJob,
+  type SpotifyTrack,
+  type YtmusicCandidate,
+} from "@spottoyt/shared";
+import { type LogEventWriter, noopLogEvent } from "../logging/logger";
 import { parseWorkerDiagnostics } from "../logging/worker-diagnostics";
 import {
   defaultMatchingSettings,
@@ -36,6 +33,12 @@ export type YtmusicSearchClient = {
     tracks: SpotifyTrack[],
     options?: YtmusicSearchOptions,
   ): Promise<YtmusicCandidateSearchResult[]>;
+};
+
+export type MatchDecisionProgress = {
+  decision: MatchDecision;
+  processedTracks: number;
+  totalTracks: number;
 };
 
 type MatchingSettingsProvider = {
@@ -81,8 +84,7 @@ export class YtmusicService {
   constructor(
     searchClient?: YtmusicSearchClient,
     private readonly logEvent: LogEventWriter = noopLogEvent,
-    private readonly matchingSettings: MatchingSettingsProvider =
-      new MatchingSettingsService(),
+    private readonly matchingSettings: MatchingSettingsProvider = new MatchingSettingsService(),
   ) {
     this.searchClient =
       searchClient ?? new PythonYtmusicSearchClient(undefined, this.logEvent);
@@ -92,47 +94,55 @@ export class YtmusicService {
     return matchDecisionSchema.array().parse(mockConversionJob.matches);
   }
 
-  async findMatchesForTracks(tracks: SpotifyTrack[]): Promise<MatchDecision[]> {
+  async findMatchesForTracks(
+    tracks: SpotifyTrack[],
+    onDecision?: (progress: MatchDecisionProgress) => void | Promise<void>,
+  ): Promise<MatchDecision[]> {
     const settings = this.matchingSettings.getSettings();
     const searchOptions = {
       includeVideos: settings.includeVideos,
       searchLimit: settings.searchLimit,
     };
-    const searchResults = await this.searchClient.findCandidatesForTracks(
-      tracks,
-      searchOptions,
-    );
-    this.logEvent("info", "api", "conversion.match.worker_results_received", {
-      trackCount: tracks.length,
-      resultCount: searchResults.length,
-    });
-    const candidatesByTrackId = new Map(
-      searchResults.map((result) => [result.trackId, result.candidates]),
-    );
+    const matches: MatchDecision[] = [];
 
-    return matchDecisionSchema.array().parse(
-      tracks.map((track) => {
-        const decision = decideMatch(
-          track,
-          candidatesByTrackId.get(track.id) ?? [],
-          settings,
-        );
+    for (const [index, track] of tracks.entries()) {
+      const searchResults = await this.searchClient.findCandidatesForTracks(
+        [track],
+        searchOptions,
+      );
+      this.logEvent("info", "api", "conversion.match.worker_results_received", {
+        trackCount: 1,
+        resultCount: searchResults.length,
+        trackId: track.id,
+      });
+      const candidates =
+        searchResults.find((result) => result.trackId === track.id)
+          ?.candidates ?? [];
+      const decision = matchDecisionSchema.parse(
+        decideMatch(track, candidates, settings),
+      );
 
-        this.logEvent(
-          decision.status === "accepted" ? "debug" : "info",
-          "api",
-          "conversion.match.decision",
-          {
-            trackId: track.id,
-            status: decision.status,
-            confidence: decision.confidence,
-            candidateVideoId: decision.candidate?.videoId,
-          },
-        );
+      this.logEvent(
+        decision.status === "accepted" ? "debug" : "info",
+        "api",
+        "conversion.match.decision",
+        {
+          trackId: track.id,
+          status: decision.status,
+          confidence: decision.confidence,
+          candidateVideoId: decision.candidate?.videoId,
+        },
+      );
 
-        return decision;
-      }),
-    );
+      matches.push(decision);
+      await onDecision?.({
+        decision,
+        processedTracks: index + 1,
+        totalTracks: tracks.length,
+      });
+    }
+
+    return matchDecisionSchema.array().parse(matches);
   }
 
   async createPlaylist(): Promise<{ playlistId: string; playlistUrl: string }> {
@@ -158,11 +168,16 @@ export class PythonYtmusicSearchClient implements YtmusicSearchClient {
   ): Promise<YtmusicCandidateSearchResult[]> {
     const workerPath = join(getWorkerDirectory(), "src", "main.py");
 
-    return runWorker(this.pythonCommand, workerPath, {
-      includeVideos: options.includeVideos,
-      limit: options.searchLimit,
-      tracks,
-    }, this.logEvent);
+    return runWorker(
+      this.pythonCommand,
+      workerPath,
+      {
+        includeVideos: options.includeVideos,
+        limit: options.searchLimit,
+        tracks,
+      },
+      this.logEvent,
+    );
   }
 }
 
@@ -307,7 +322,10 @@ function scoreArtist(track: SpotifyTrack, candidate: YtmusicCandidate) {
   const candidateTokens = tokenize(
     normalizeText(`${candidate.artists.join(" ")} ${candidate.title}`),
   );
-  const primaryArtistScore = scoreArtistName(track.artists[0] ?? "", candidateTokens);
+  const primaryArtistScore = scoreArtistName(
+    track.artists[0] ?? "",
+    candidateTokens,
+  );
   const featuredArtistScores = track.artists
     .slice(1)
     .map((artist) => scoreArtistName(artist, candidateTokens));
@@ -476,7 +494,12 @@ async function runWorker(
       });
 
       for (const diagnostic of parseWorkerDiagnostics(errorOutput)) {
-        logEvent("debug", "ytmusic-worker", diagnostic.event, diagnostic.fields);
+        logEvent(
+          "debug",
+          "ytmusic-worker",
+          diagnostic.event,
+          diagnostic.fields,
+        );
       }
 
       if (code !== 0) {
@@ -509,7 +532,10 @@ async function runWorker(
 }
 
 function getWorkerDirectory() {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../ytmusic-worker");
+  return resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../ytmusic-worker",
+  );
 }
 
 function parseWorkerResults(output: string): YtmusicCandidateSearchResult[] {

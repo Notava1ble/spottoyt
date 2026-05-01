@@ -1,4 +1,4 @@
-import type { ConversionJob } from "@spottoyt/shared";
+import type { ConversionJob, ImportEvent } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Card, CardContent } from "@spottoyt/ui/components/card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,15 +22,21 @@ export function ConvertPage() {
     null,
   );
   const [matchDialog, setMatchDialog] = useState<{
+    completedConversion: ConversionJob | null;
     errorMessage: string | null;
-    matchedConversion: ConversionJob | null;
     open: boolean;
+    processedTracks: number;
+    progressConversion: ConversionJob | null;
     sourceConversion: ConversionJob | null;
+    totalTracks: number;
   }>({
+    completedConversion: null,
     errorMessage: null,
-    matchedConversion: null,
     open: false,
+    processedTracks: 0,
+    progressConversion: null,
     sourceConversion: null,
+    totalTracks: 0,
   });
   const queryClient = useQueryClient();
   const accountStatus = useQuery({
@@ -57,10 +63,13 @@ export function ConvertPage() {
         conversionId: id,
       });
       setMatchDialog({
+        completedConversion: null,
         errorMessage: null,
-        matchedConversion: null,
         open: true,
+        processedTracks: 0,
+        progressConversion: null,
         sourceConversion: conversion,
+        totalTracks: conversion?.tracks.length ?? 0,
       });
     },
     onSuccess: (response) => {
@@ -69,9 +78,13 @@ export function ConvertPage() {
         status: response.conversion.status,
         matchCount: response.conversion.matches.length,
       });
+      finishMatchingDialog(response.conversion);
       setMatchDialog((current) => ({
         ...current,
-        matchedConversion: response.conversion,
+        completedConversion: current.completedConversion ?? response.conversion,
+        processedTracks:
+          current.processedTracks || response.conversion.matches.length,
+        totalTracks: current.totalTracks || response.conversion.tracks.length,
       }));
     },
     onError: (error) => {
@@ -151,12 +164,76 @@ export function ConvertPage() {
         setLiveConversion(response.conversion);
       });
     });
+    events.addEventListener("conversion-match-progress", (event) => {
+      const payload = parseConversionEvent(event);
+
+      if (payload?.type !== "conversion-match-progress") {
+        return;
+      }
+
+      logClientEvent("info", "web.sse.conversion_match_progress", {
+        conversionId: payload.conversionId,
+        processedTracks: payload.processedTracks,
+        totalTracks: payload.totalTracks,
+        trackId: payload.match.trackId,
+      });
+      setLiveConversion(payload.conversion);
+      setMatchDialog((current) => ({
+        ...current,
+        open:
+          current.open || current.sourceConversion?.id === payload.conversionId,
+        processedTracks: payload.processedTracks,
+        progressConversion: payload.conversion,
+        totalTracks: payload.totalTracks,
+      }));
+    });
+    events.addEventListener("conversion-match-completed", (event) => {
+      const payload = parseConversionEvent(event);
+
+      if (payload?.type !== "conversion-match-completed") {
+        return;
+      }
+
+      logClientEvent("info", "web.sse.conversion_match_completed", {
+        conversionId: payload.conversionId,
+        processedTracks: payload.processedTracks,
+        totalTracks: payload.totalTracks,
+      });
+      finishMatchingDialog(payload.conversion);
+      setMatchDialog((current) => ({
+        ...current,
+        completedConversion: payload.conversion,
+        open:
+          current.open || current.sourceConversion?.id === payload.conversionId,
+        processedTracks: payload.processedTracks,
+        progressConversion: payload.conversion,
+        totalTracks: payload.totalTracks,
+      }));
+    });
+    events.addEventListener("conversion-match-failed", (event) => {
+      const payload = parseConversionEvent(event);
+
+      if (payload?.type !== "conversion-match-failed") {
+        return;
+      }
+
+      logClientEvent("error", "web.sse.conversion_match_failed", {
+        conversionId: payload.conversionId,
+        message: payload.message,
+      });
+      setMatchDialog((current) => ({
+        ...current,
+        errorMessage: payload.message,
+        open:
+          current.open || current.sourceConversion?.id === payload.conversionId,
+      }));
+    });
 
     return () => {
       logClientEvent("info", "web.sse.closed");
       events.close();
     };
-  }, [queryClient]);
+  }, [finishMatchingDialog, queryClient]);
 
   return (
     <section className="flex flex-col gap-6">
@@ -218,14 +295,16 @@ export function ConvertPage() {
       </Card>
 
       <MatchProgressDialog
+        completedConversion={matchDialog.completedConversion}
         errorMessage={matchDialog.errorMessage}
-        matchedConversion={matchDialog.matchedConversion}
-        onFinished={finishMatchingDialog}
         onOpenChange={(open) =>
           setMatchDialog((current) => ({ ...current, open }))
         }
         open={matchDialog.open}
+        processedTracks={matchDialog.processedTracks}
+        progressConversion={matchDialog.progressConversion}
         sourceConversion={matchDialog.sourceConversion}
+        totalTracks={matchDialog.totalTracks}
       />
 
       {conversion ? (
@@ -236,4 +315,12 @@ export function ConvertPage() {
       ) : null}
     </section>
   );
+}
+
+function parseConversionEvent(event: MessageEvent<string>) {
+  try {
+    return JSON.parse(event.data) as ImportEvent;
+  } catch {
+    return null;
+  }
 }

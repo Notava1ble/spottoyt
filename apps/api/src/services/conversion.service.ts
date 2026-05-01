@@ -7,12 +7,18 @@ import {
   type SpicetifyPlaylistSnapshot,
   type SpotifyTrack,
 } from "@spottoyt/shared";
-import {
-  type LogEventWriter,
-  noopLogEvent,
-} from "../logging/logger";
+import { type LogEventWriter, noopLogEvent } from "../logging/logger";
 import { MatcherService } from "./matcher.service";
 import { YtmusicService } from "./ytmusic.service";
+
+type MatchConversionOptions = {
+  onProgress?: (progress: {
+    conversion: ConversionJob;
+    match: MatchDecision;
+    processedTracks: number;
+    totalTracks: number;
+  }) => void | Promise<void>;
+};
 
 export class ConversionService {
   private latestImport?: ConversionJob;
@@ -89,7 +95,7 @@ export class ConversionService {
     return conversionJobSchema.parse(conversion);
   }
 
-  async matchConversion(id: string) {
+  async matchConversion(id: string, options: MatchConversionOptions = {}) {
     const conversion = this.requireLatestConversion(id);
     const matching = conversionJobSchema.parse({
       ...conversion,
@@ -105,7 +111,27 @@ export class ConversionService {
 
     let matches: MatchDecision[];
     try {
-      matches = await this.ytmusic.findMatchesForTracks(matching.tracks);
+      matches = await this.ytmusic.findMatchesForTracks(
+        matching.tracks,
+        async ({ decision, processedTracks, totalTracks }) => {
+          const progressConversion = conversionJobSchema.parse({
+            ...matching,
+            matches: matchesByTrackOrder(matching.tracks, [
+              ...(this.latestImport?.matches ?? []),
+              decision,
+            ]),
+            updatedAt: new Date().toISOString(),
+          });
+          this.latestImport = progressConversion;
+
+          await options.onProgress?.({
+            conversion: progressConversion,
+            match: decision,
+            processedTracks,
+            totalTracks,
+          });
+        },
+      );
     } catch (error) {
       this.logEvent("error", "api", "conversion.match.failed", {
         conversionId: matching.id,
@@ -136,13 +162,11 @@ export class ConversionService {
     };
   }
 
-  updateMatchStatus(
-    id: string,
-    trackId: string,
-    status: MatchDecisionStatus,
-  ) {
+  updateMatchStatus(id: string, trackId: string, status: MatchDecisionStatus) {
     const conversion = this.requireLatestConversion(id);
-    const existing = conversion.matches.find((match) => match.trackId === trackId);
+    const existing = conversion.matches.find(
+      (match) => match.trackId === trackId,
+    );
 
     if (!existing && status !== "skipped") {
       throw new MatchNotFoundError();
@@ -232,16 +256,10 @@ export class ConversionService {
   }
 
   private replaceMatch(conversion: ConversionJob, match: MatchDecision) {
-    const matchesByTrackId = new Map(
-      conversion.matches.map((item) => [item.trackId, item]),
-    );
-    matchesByTrackId.set(match.trackId, match);
-
-    const matches = conversion.tracks.flatMap((track) => {
-      const nextMatch = matchesByTrackId.get(track.id);
-
-      return nextMatch ? [nextMatch] : [];
-    });
+    const matches = matchesByTrackOrder(conversion.tracks, [
+      ...conversion.matches,
+      match,
+    ]);
     const updated = conversionJobSchema.parse({
       ...conversion,
       status: "reviewing",
@@ -264,6 +282,19 @@ export class ConversionService {
       summary,
     };
   }
+}
+
+function matchesByTrackOrder(
+  tracks: ConversionJob["tracks"],
+  matches: MatchDecision[],
+) {
+  const matchesByTrackId = new Map(matches.map((item) => [item.trackId, item]));
+
+  return tracks.flatMap((track) => {
+    const nextMatch = matchesByTrackId.get(track.id);
+
+    return nextMatch ? [nextMatch] : [];
+  });
 }
 
 export class ImportLockedError extends Error {

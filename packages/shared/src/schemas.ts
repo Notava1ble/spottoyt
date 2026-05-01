@@ -119,10 +119,37 @@ export const spicetifyImportResponseSchema = z.object({
   conversion: conversionJobSchema,
 });
 
-export const importEventSchema = z.object({
-  type: z.literal("spicetify-imported"),
-  conversionId: z.string(),
-});
+export const importEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("spicetify-imported"),
+    conversionId: z.string(),
+  }),
+  z.object({
+    type: z.literal("conversion-match-started"),
+    conversionId: z.string(),
+    totalTracks: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("conversion-match-progress"),
+    conversion: conversionJobSchema,
+    conversionId: z.string(),
+    match: matchDecisionSchema,
+    processedTracks: z.number().int().nonnegative(),
+    totalTracks: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("conversion-match-completed"),
+    conversion: conversionJobSchema,
+    conversionId: z.string(),
+    processedTracks: z.number().int().nonnegative(),
+    totalTracks: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("conversion-match-failed"),
+    conversionId: z.string(),
+    message: z.string(),
+  }),
+]);
 
 export const mockConversionJob = {
   id: "demo-conversion",
