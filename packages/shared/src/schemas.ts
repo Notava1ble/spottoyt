@@ -177,6 +177,13 @@ export const importEventSchema = z.discriminatedUnion("type", [
     totalTracks: z.number().int().nonnegative(),
   }),
   z.object({
+    type: z.literal("conversion-match-cancelled"),
+    conversion: conversionJobSchema,
+    conversionId: z.string(),
+    processedTracks: z.number().int().nonnegative(),
+    totalTracks: z.number().int().nonnegative(),
+  }),
+  z.object({
     type: z.literal("conversion-match-failed"),
     conversionId: z.string(),
     message: z.string(),

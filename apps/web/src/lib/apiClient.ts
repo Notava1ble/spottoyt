@@ -114,6 +114,7 @@ export function updateMatchingSettings(patch: MatchingSettingsPatch) {
 
 export function matchConversion(id: string) {
   return apiPost<{
+    cancelled?: boolean;
     conversion: ConversionJob;
     summary: {
       accepted: number;
@@ -122,6 +123,18 @@ export function matchConversion(id: string) {
       total: number;
     };
   }>(`/conversions/${id}/match`);
+}
+
+export function cancelMatchConversion(id: string) {
+  return apiPost<{
+    conversion: ConversionJob;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(`/conversions/${id}/match/cancel`);
 }
 
 export function updateMatchStatus(

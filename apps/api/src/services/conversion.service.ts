@@ -21,7 +21,12 @@ type MatchConversionOptions = {
   }) => void | Promise<void>;
 };
 
+type MatchCancellation = {
+  cancelled: boolean;
+};
+
 export class ConversionService {
+  private activeMatchCancellations = new Map<string, MatchCancellation>();
   private latestImport?: ConversionJob;
   private readonly ytmusic: YtmusicService;
   private readonly matcher: MatcherService;
@@ -98,6 +103,8 @@ export class ConversionService {
 
   async matchConversion(id: string, options: MatchConversionOptions = {}) {
     const conversion = this.requireLatestConversion(id);
+    const cancellation: MatchCancellation = { cancelled: false };
+    this.activeMatchCancellations.set(id, cancellation);
     const matching = conversionJobSchema.parse({
       ...conversion,
       status: "matching",
@@ -132,6 +139,7 @@ export class ConversionService {
             totalTracks,
           });
         },
+        () => cancellation.cancelled,
       );
     } catch (error) {
       this.logEvent("error", "api", "conversion.match.failed", {
@@ -141,6 +149,18 @@ export class ConversionService {
         stack: error instanceof Error ? error.stack : undefined,
       });
       throw error;
+    } finally {
+      this.activeMatchCancellations.delete(id);
+    }
+
+    if (cancellation.cancelled) {
+      const cancelled = this.finalizeCancelledMatch(matching, matches);
+
+      return {
+        cancelled: true,
+        conversion: cancelled,
+        summary: this.matcher.summarize(cancelled.matches),
+      };
     }
 
     const matched = conversionJobSchema.parse({
@@ -158,8 +178,35 @@ export class ConversionService {
     });
 
     return {
+      cancelled: false,
       conversion: matched,
       summary,
+    };
+  }
+
+  cancelMatchConversion(id: string) {
+    const conversion = this.requireLatestConversion(id);
+    const cancellation = this.activeMatchCancellations.get(id);
+
+    if (cancellation) {
+      cancellation.cancelled = true;
+    }
+
+    if (!cancellation && conversion.status !== "matching") {
+      return {
+        conversion,
+        summary: this.matcher.summarize(conversion.matches),
+      };
+    }
+
+    const cancelled = this.finalizeCancelledMatch(
+      conversion,
+      conversion.matches,
+    );
+
+    return {
+      conversion: cancelled,
+      summary: this.matcher.summarize(cancelled.matches),
     };
   }
 
@@ -358,6 +405,27 @@ export class ConversionService {
       match,
       summary,
     };
+  }
+
+  private finalizeCancelledMatch(
+    conversion: ConversionJob,
+    matches: MatchDecision[],
+  ) {
+    const cancelled = conversionJobSchema.parse({
+      ...conversion,
+      status: matches.length > 0 ? "reviewing" : "imported",
+      updatedAt: new Date().toISOString(),
+      matches: matchesByTrackOrder(conversion.tracks, matches),
+    });
+    this.latestImport = cancelled;
+    const summary = this.matcher.summarize(cancelled.matches);
+
+    this.logEvent("info", "api", "conversion.match.cancelled", {
+      conversionId: cancelled.id,
+      ...summary,
+    });
+
+    return cancelled;
   }
 }
 

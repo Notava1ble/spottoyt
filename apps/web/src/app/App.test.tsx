@@ -132,6 +132,21 @@ function mockApi({
         );
       }
 
+      if (method === "POST" && url.match(/\/conversions\/.+\/match\/cancel$/)) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+
+        return new Response(
+          JSON.stringify({
+            conversion,
+            summary: { accepted: 0, review: 0, skipped: 0, total: 0 },
+          }),
+          { status: 200 },
+        );
+      }
+
       if (method === "POST" && url.match(/\/conversions\/.+\/create$/)) {
         const conversion =
           typeof latestConversion === "function"
@@ -702,6 +717,67 @@ describe("app shell", () => {
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("Midnight City")).toHaveLength(2);
     expect(screen.getAllByText("Outro")).toHaveLength(2);
+  });
+
+  it("hides active matching while keeping a background progress indicator", async () => {
+    const user = userEvent.setup();
+    const matchingResponse = new Promise<unknown>(() => {});
+
+    mockApi({
+      latestConversion: importedConversion(),
+      matchedConversion: () => matchingResponse,
+    });
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /match with ytmusic/i }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: /matching with youtube music/i,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /hide/i }));
+
+    expect(
+      screen.queryByRole("dialog", { name: /matching with youtube music/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/matching is running in the background/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /show matching progress/i }),
+    ).toBeEnabled();
+  });
+
+  it("stops active matching from the progress dialog", async () => {
+    const user = userEvent.setup();
+    const matchingResponse = new Promise<unknown>(() => {});
+    const fetchMock = mockApi({
+      latestConversion: importedConversion(),
+      matchedConversion: () => matchingResponse,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /match with ytmusic/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /stop matching/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          call[0]
+            .toString()
+            .endsWith("/conversions/conversion-spicetify-playlist-1/match/cancel"),
+        ),
+      ).toBe(true),
+    );
   });
 
   it("lets low-confidence accepted songs be unselected back to review", async () => {

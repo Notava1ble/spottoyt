@@ -16,7 +16,10 @@ import { formatConfidence, formatDuration } from "../../lib/formatters";
 
 type MatchProgressDialogProps = {
   completedConversion?: ConversionJob | null;
+  cancelling?: boolean;
+  cancelledConversion?: ConversionJob | null;
   errorMessage?: string | null;
+  onCancel?: (conversionId: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   processedTracks?: number;
@@ -32,11 +35,14 @@ type LogEntry = {
   tone: "active" | "done" | "error";
 };
 
-type DialogPhase = "matching" | "done" | "failed";
+type DialogPhase = "matching" | "done" | "failed" | "cancelled";
 
 export function MatchProgressDialog({
+  cancelledConversion,
+  cancelling = false,
   completedConversion,
   errorMessage,
+  onCancel,
   onOpenChange,
   open,
   processedTracks,
@@ -45,7 +51,11 @@ export function MatchProgressDialog({
   totalTracks,
 }: MatchProgressDialogProps) {
   const activeConversion =
-    completedConversion ?? progressConversion ?? sourceConversion ?? null;
+    cancelledConversion ??
+    completedConversion ??
+    progressConversion ??
+    sourceConversion ??
+    null;
   const visibleTotalTracks =
     totalTracks ??
     sourceConversion?.tracks.length ??
@@ -53,14 +63,17 @@ export function MatchProgressDialog({
     0;
   const visibleProcessedTracks =
     processedTracks ??
+    cancelledConversion?.matches.length ??
     completedConversion?.matches.length ??
     progressConversion?.matches.length ??
     0;
   const phase: DialogPhase = errorMessage
     ? "failed"
-    : completedConversion
-      ? "done"
-      : "matching";
+    : cancelledConversion
+      ? "cancelled"
+      : completedConversion
+        ? "done"
+        : "matching";
   const logs = useMemo(
     () =>
       buildLogs({
@@ -71,7 +84,6 @@ export function MatchProgressDialog({
       }),
     [activeConversion, completedConversion, errorMessage, sourceConversion],
   );
-  const canClose = phase !== "matching";
   const progressValue =
     phase === "done"
       ? 100
@@ -82,24 +94,9 @@ export function MatchProgressDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen || canClose) {
-          onOpenChange(nextOpen);
-        }
-      }}
+      onOpenChange={onOpenChange}
     >
-      <DialogContent
-        onEscapeKeyDown={(event) => {
-          if (!canClose) {
-            event.preventDefault();
-          }
-        }}
-        onInteractOutside={(event) => {
-          if (!canClose) {
-            event.preventDefault();
-          }
-        }}
-      >
+      <DialogContent>
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
             <div className="flex flex-col gap-1.5">
@@ -107,6 +104,8 @@ export function MatchProgressDialog({
               <DialogDescription>
                 {phase === "done"
                   ? "Done. Close this dialog to review and adjust the matches."
+                  : phase === "cancelled"
+                    ? "Matching stopped. Any completed matches are still available for review."
                   : phase === "failed"
                     ? "The match did not finish. Check the log below before trying again."
                     : "Searching YouTube Music and preparing review decisions."}
@@ -124,9 +123,13 @@ export function MatchProgressDialog({
             <span>
               {phase === "done"
                 ? "Ready for review"
+                : phase === "cancelled"
+                  ? "Stopped"
                 : phase === "failed"
                   ? "Stopped"
-                  : "Matching songs"}
+                  : cancelling
+                    ? "Stopping matching"
+                    : "Matching songs"}
             </span>
             <span>{progressValue}%</span>
           </div>
@@ -165,10 +168,29 @@ export function MatchProgressDialog({
           </div>
         ) : null}
 
-        <DialogFooter>
-          <Button disabled={!canClose} onClick={() => onOpenChange(false)}>
-            {phase === "done" ? "View results" : "Close"}
-          </Button>
+        <DialogFooter className="gap-2">
+          {phase === "matching" ? (
+            <>
+              <Button
+                disabled={cancelling || !activeConversion}
+                onClick={() => {
+                  if (activeConversion) {
+                    onCancel?.(activeConversion.id);
+                  }
+                }}
+                variant="destructive"
+              >
+                {cancelling ? "Stopping" : "Stop matching"}
+              </Button>
+              <Button onClick={() => onOpenChange(false)} variant="secondary">
+                Hide
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => onOpenChange(false)}>
+              {phase === "done" ? "View results" : "Close"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

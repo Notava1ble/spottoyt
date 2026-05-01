@@ -143,6 +143,7 @@ export class YtmusicService {
   async findMatchesForTracks(
     tracks: SpotifyTrack[],
     onDecision?: (progress: MatchDecisionProgress) => void | Promise<void>,
+    shouldCancel?: () => boolean,
   ): Promise<MatchDecision[]> {
     const settings = this.matchingSettings.getSettings();
     const searchOptions = {
@@ -152,6 +153,10 @@ export class YtmusicService {
     const matches: MatchDecision[] = [];
 
     for (const [index, track] of tracks.entries()) {
+      if (shouldCancel?.()) {
+        break;
+      }
+
       const searchResults = await this.searchClient.findCandidatesForTracks(
         [track],
         searchOptions,

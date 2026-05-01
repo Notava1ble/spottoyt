@@ -406,13 +406,23 @@ export function buildApp(
           },
         });
 
-        importEvents.publish({
-          type: "conversion-match-completed",
-          conversionId: result.conversion.id,
-          conversion: result.conversion,
-          processedTracks: result.conversion.matches.length,
-          totalTracks: result.conversion.tracks.length,
-        });
+        if (result.cancelled) {
+          importEvents.publish({
+            type: "conversion-match-cancelled",
+            conversionId: result.conversion.id,
+            conversion: result.conversion,
+            processedTracks: result.conversion.matches.length,
+            totalTracks: result.conversion.tracks.length,
+          });
+        } else {
+          importEvents.publish({
+            type: "conversion-match-completed",
+            conversionId: result.conversion.id,
+            conversion: result.conversion,
+            processedTracks: result.conversion.matches.length,
+            totalTracks: result.conversion.tracks.length,
+          });
+        }
 
         return result;
       } catch (error) {
@@ -421,6 +431,19 @@ export function buildApp(
           conversionId: request.params.id,
           message: error instanceof Error ? error.message : String(error),
         });
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
+  app.post<{ Params: { id: string } }>("/conversions/:id/match/cancel", {
+    schema: {
+      params: conversionParamsSchema,
+    },
+    handler: async (request, reply) => {
+      try {
+        return conversions.cancelMatchConversion(request.params.id);
+      } catch (error) {
         return handleConversionError(error, reply);
       }
     },

@@ -535,6 +535,172 @@ describe("api shell", () => {
     await app.close();
   });
 
+  it("cancels an in-progress match before starting later tracks", async () => {
+    let releaseFirstTrack: (() => void) | undefined;
+    const releaseFirstTrackPromise = new Promise<void>((resolveRelease) => {
+      releaseFirstTrack = resolveRelease;
+    });
+    const searchedTracks: string[] = [];
+    const events: Array<{ event: string; fields?: Record<string, unknown> }> =
+      [];
+    const captureEvent = (
+      _level: string,
+      _source: string,
+      event: string,
+      fields?: Record<string, unknown>,
+    ) => {
+      events.push({ event, fields });
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService(
+            {
+              async findCandidatesForTracks(tracks) {
+                const [track] = tracks;
+                searchedTracks.push(track?.title ?? "");
+
+                if (track?.title === "Midnight City") {
+                  await releaseFirstTrackPromise;
+                }
+
+                return tracks.map((item) => ({
+                  trackId: item.id,
+                  candidates: [
+                    {
+                      videoId: `ytm-${item.title.toLowerCase().replaceAll(" ", "-")}`,
+                      title: item.title,
+                      artists: item.artists,
+                      album: item.album,
+                      durationMs: item.durationMs,
+                      resultType: "song" as const,
+                    },
+                  ],
+                }));
+              },
+            },
+            captureEvent,
+          ),
+          undefined,
+          captureEvent,
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshotWithTracks("Road trip", [
+        "Midnight City",
+        "Outro",
+      ]),
+    });
+    const matchRequest = app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    await vi.waitFor(() => expect(searchedTracks).toEqual(["Midnight City"]));
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match/cancel`,
+    });
+
+    releaseFirstTrack?.();
+    const matched = await matchRequest;
+    const latest = await app.inject({
+      method: "GET",
+      url: "/imports/latest",
+    });
+
+    expect(cancelled.statusCode).toBe(200);
+    expect(matched.statusCode).toBe(200);
+    expect(searchedTracks).toEqual(["Midnight City"]);
+    expect(latest.json().conversion.status).toBe("reviewing");
+    expect(latest.json().conversion.matches).toHaveLength(1);
+    expect(latest.json().conversion.matches[0].trackId).toBe(
+      "spotify:track:midnight-city",
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: "conversion.match.cancelled",
+        fields: expect.objectContaining({
+          conversionId: imported.json().conversion.id,
+        }),
+      }),
+    );
+
+    await app.close();
+  });
+
+  it("leaves completed conversions unchanged when cancelling matching", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService(
+            {
+              async findCandidatesForTracks(tracks) {
+                return tracks.map((track) => ({
+                  trackId: track.id,
+                  candidates: [
+                    {
+                      videoId: "ytm-midnight-city",
+                      title: track.title,
+                      artists: track.artists,
+                      album: track.album,
+                      durationMs: track.durationMs,
+                      resultType: "song" as const,
+                    },
+                  ],
+                }));
+              },
+            },
+            undefined,
+            undefined,
+            {
+              async createPlaylist() {
+                return {
+                  playlistId: "PLroadtrip",
+                  playlistUrl:
+                    "https://music.youtube.com/playlist?list=PLroadtrip",
+                };
+              },
+            },
+          ),
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/create`,
+      payload: { targetPlaylistName: "Road trip" },
+    });
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match/cancel`,
+    });
+
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json().conversion).toEqual(created.json());
+
+    await app.close();
+  });
+
   it("persists match decision status changes through the API", async () => {
     const app = buildApp(
       { logger: false },

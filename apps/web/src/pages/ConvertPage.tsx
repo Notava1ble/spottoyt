@@ -1,12 +1,16 @@
 import type { ConversionJob, ImportEvent } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
+import { Button } from "@spottoyt/ui/components/button";
 import { Card, CardContent } from "@spottoyt/ui/components/card";
+import { Progress } from "@spottoyt/ui/components/progress";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleDotDashed, CircleStop, PanelsTopLeft } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { MatchProgressDialog } from "../components/conversion/MatchProgressDialog";
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
 import {
+  cancelMatchConversion,
   createPlaylist,
   getEventsUrl,
   getLatestImport,
@@ -20,6 +24,7 @@ export function ConvertPage() {
     null,
   );
   const [matchDialog, setMatchDialog] = useState<{
+    cancelledConversion: ConversionJob | null;
     completedConversion: ConversionJob | null;
     errorMessage: string | null;
     open: boolean;
@@ -28,6 +33,7 @@ export function ConvertPage() {
     sourceConversion: ConversionJob | null;
     totalTracks: number;
   }>({
+    cancelledConversion: null,
     completedConversion: null,
     errorMessage: null,
     open: false,
@@ -56,6 +62,7 @@ export function ConvertPage() {
         conversionId: id,
       });
       setMatchDialog({
+        cancelledConversion: null,
         completedConversion: null,
         errorMessage: null,
         open: true,
@@ -70,11 +77,19 @@ export function ConvertPage() {
         conversionId: response.conversion.id,
         status: response.conversion.status,
         matchCount: response.conversion.matches.length,
+        cancelled: response.cancelled === true,
       });
       finishMatchingDialog(response.conversion);
       setMatchDialog((current) => ({
         ...current,
-        completedConversion: current.completedConversion ?? response.conversion,
+        cancelledConversion:
+          response.cancelled === true
+            ? (current.cancelledConversion ?? response.conversion)
+            : current.cancelledConversion,
+        completedConversion:
+          response.cancelled === true
+            ? current.completedConversion
+            : (current.completedConversion ?? response.conversion),
         processedTracks:
           current.processedTracks || response.conversion.matches.length,
         totalTracks: current.totalTracks || response.conversion.tracks.length,
@@ -83,6 +98,39 @@ export function ConvertPage() {
     onError: (error) => {
       const message = error instanceof Error ? error.message : String(error);
       logClientEvent("error", "web.conversion.match.failed", {
+        message,
+      });
+      setMatchDialog((current) => ({
+        ...current,
+        errorMessage: message,
+      }));
+    },
+  });
+  const cancelMatch = useMutation({
+    mutationFn: (id: string) => cancelMatchConversion(id),
+    onMutate: (id) => {
+      logClientEvent("info", "web.conversion.match_cancel.clicked", {
+        conversionId: id,
+      });
+    },
+    onSuccess: (response) => {
+      logClientEvent("info", "web.conversion.match_cancel.completed", {
+        conversionId: response.conversion.id,
+        status: response.conversion.status,
+        matchCount: response.conversion.matches.length,
+      });
+      finishMatchingDialog(response.conversion);
+      setMatchDialog((current) => ({
+        ...current,
+        cancelledConversion: response.conversion,
+        processedTracks: response.conversion.matches.length,
+        progressConversion: response.conversion,
+        totalTracks: response.conversion.tracks.length,
+      }));
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logClientEvent("error", "web.conversion.match_cancel.failed", {
         message,
       });
       setMatchDialog((current) => ({
@@ -144,6 +192,12 @@ export function ConvertPage() {
   const locked = conversion
     ? conversion.status !== "imported" && conversion.status !== "importing"
     : false;
+  const matchingActive =
+    match.isPending &&
+    !matchDialog.cancelledConversion &&
+    !matchDialog.completedConversion &&
+    !matchDialog.errorMessage;
+  const matchingInBackground = matchingActive && !matchDialog.open;
 
   useEffect(() => {
     if (latestImport.error) {
@@ -225,6 +279,29 @@ export function ConvertPage() {
         totalTracks: payload.totalTracks,
       }));
     });
+    events.addEventListener("conversion-match-cancelled", (event) => {
+      const payload = parseConversionEvent(event);
+
+      if (payload?.type !== "conversion-match-cancelled") {
+        return;
+      }
+
+      logClientEvent("info", "web.sse.conversion_match_cancelled", {
+        conversionId: payload.conversionId,
+        processedTracks: payload.processedTracks,
+        totalTracks: payload.totalTracks,
+      });
+      finishMatchingDialog(payload.conversion);
+      setMatchDialog((current) => ({
+        ...current,
+        cancelledConversion: payload.conversion,
+        open:
+          current.open || current.sourceConversion?.id === payload.conversionId,
+        processedTracks: payload.processedTracks,
+        progressConversion: payload.conversion,
+        totalTracks: payload.totalTracks,
+      }));
+    });
     events.addEventListener("conversion-match-failed", (event) => {
       const payload = parseConversionEvent(event);
 
@@ -298,9 +375,31 @@ export function ConvertPage() {
         </CardContent>
       </Card>
 
+      {matchingInBackground ? (
+        <BackgroundMatchIndicator
+          cancelling={cancelMatch.isPending}
+          onShow={() =>
+            setMatchDialog((current) => ({ ...current, open: true }))
+          }
+          onStop={() => {
+            const activeConversion =
+              matchDialog.progressConversion ?? matchDialog.sourceConversion;
+
+            if (activeConversion) {
+              cancelMatch.mutate(activeConversion.id);
+            }
+          }}
+          processedTracks={matchDialog.processedTracks}
+          totalTracks={matchDialog.totalTracks}
+        />
+      ) : null}
+
       <MatchProgressDialog
+        cancelledConversion={matchDialog.cancelledConversion}
+        cancelling={cancelMatch.isPending}
         completedConversion={matchDialog.completedConversion}
         errorMessage={matchDialog.errorMessage}
+        onCancel={(conversionId) => cancelMatch.mutate(conversionId)}
         onOpenChange={(open) =>
           setMatchDialog((current) => ({ ...current, open }))
         }
@@ -318,6 +417,57 @@ export function ConvertPage() {
         />
       ) : null}
     </section>
+  );
+}
+
+function BackgroundMatchIndicator({
+  cancelling,
+  onShow,
+  onStop,
+  processedTracks,
+  totalTracks,
+}: {
+  cancelling: boolean;
+  onShow: () => void;
+  onStop: () => void;
+  processedTracks: number;
+  totalTracks: number;
+}) {
+  const progressValue =
+    totalTracks > 0 ? Math.round((processedTracks / totalTracks) * 100) : 0;
+
+  return (
+    <div className="rounded-md border bg-background p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <CircleDotDashed
+              aria-hidden="true"
+              className="size-4 text-muted-foreground"
+            />
+            <p className="font-medium text-foreground text-sm">
+              Matching is running in the background
+            </p>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <Progress className="max-w-sm" value={progressValue} />
+            <span className="shrink-0 text-muted-foreground text-sm">
+              {processedTracks}/{totalTracks}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onShow} variant="secondary">
+            <PanelsTopLeft aria-hidden="true" />
+            Show matching progress
+          </Button>
+          <Button disabled={cancelling} onClick={onStop} variant="destructive">
+            <CircleStop aria-hidden="true" />
+            {cancelling ? "Stopping" : "Stop matching"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
