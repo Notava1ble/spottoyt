@@ -94,6 +94,52 @@ describe("YtmusicService", () => {
     ]);
   });
 
+  it("should auto-accept exact non-Latin title and artist candidates", async () => {
+    const track = {
+      ...baseTrack,
+      id: "spotify:track:yoru-ni-kakeru",
+      title: "夜に駆ける",
+      artists: ["ЙОАСОБИ"],
+      album: "THE BOOK",
+      durationMs: 261000,
+    } satisfies SpotifyTrack;
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: track.id,
+          candidates: [
+            {
+              videoId: "ytm-yoru-ni-kakeru",
+              title: "夜に駆ける",
+              artists: ["ЙОАСОБИ"],
+              album: "THE BOOK",
+              durationMs: 261000,
+              resultType: "song",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const matches = await service.findMatchesForTracks([track]);
+
+    expect(matches).toEqual([
+      {
+        trackId: track.id,
+        candidate: {
+          videoId: "ytm-yoru-ni-kakeru",
+          title: "夜に駆ける",
+          artists: ["ЙОАСОБИ"],
+          album: "THE BOOK",
+          durationMs: 261000,
+          resultType: "song",
+        },
+        confidence: 1,
+        status: "accepted",
+      },
+    ]);
+  });
+
   it("should auto-accept official audio or video candidates when title, artist, and duration agree", async () => {
     const track = {
       ...baseTrack,
