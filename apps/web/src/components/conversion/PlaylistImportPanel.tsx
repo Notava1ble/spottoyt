@@ -34,9 +34,16 @@ export function PlaylistImportPanel({
   const [playlistName, setPlaylistName] = useState("");
   const lastSyncedConversionId = useRef<string | null>(null);
   const trackCount = latestConversion?.tracks.length ?? 0;
+  const matchedTrackCount = latestConversion?.matches.length ?? 0;
+  const hasUnmatchedTracks =
+    latestConversion ? matchedTrackCount < latestConversion.tracks.length : false;
+  const canContinueMatching =
+    latestConversion?.status === "reviewing" && hasUnmatchedTracks;
   const statusLabel =
     latestConversion?.status === "reviewing"
-      ? "Matches ready for review"
+      ? hasUnmatchedTracks
+        ? "Matching stopped"
+        : "Matches ready for review"
       : latestConversion
         ? "Imported"
         : "Waiting";
@@ -91,10 +98,14 @@ export function PlaylistImportPanel({
         ) : null}
         {latestConversion ? (
           <div className="flex flex-wrap gap-2">
-            {latestConversion.status === "imported" ? (
+            {latestConversion.status === "imported" || canContinueMatching ? (
               <Button disabled={matching} onClick={onMatch} type="button">
                 <Search data-icon="inline-start" aria-hidden="true" />
-                {matching ? "Matching with YTMusic" : "Match with YTMusic"}
+                {matching
+                  ? "Matching with YTMusic"
+                  : canContinueMatching
+                    ? "Continue matching"
+                    : "Match with YTMusic"}
               </Button>
             ) : null}
             {latestConversion.status === "reviewing" ? (

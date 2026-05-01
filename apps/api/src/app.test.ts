@@ -701,6 +701,73 @@ describe("api shell", () => {
     await app.close();
   });
 
+  it("continues matching only tracks without existing decisions", async () => {
+    const searchedTracks: string[] = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks(tracks) {
+            searchedTracks.push(...tracks.map((track) => track.title));
+
+            return tracks.map((track) => ({
+              trackId: track.id,
+              candidates: [
+                {
+                  videoId: `ytm-${track.title.toLowerCase().replaceAll(" ", "-")}`,
+                  title: track.title,
+                  artists: track.artists,
+                  album: track.album,
+                  durationMs: track.durationMs,
+                  resultType: "song" as const,
+                },
+              ],
+            }));
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshotWithTracks("Road trip", [
+        "Midnight City",
+        "Outro",
+      ]),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/status`,
+      payload: { status: "skipped" },
+    });
+
+    const matched = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+
+    expect(matched.statusCode).toBe(200);
+    expect(searchedTracks).toEqual(["Outro"]);
+    expect(matched.json().conversion.matches).toEqual([
+      {
+        trackId: "spotify:track:midnight-city",
+        candidate: null,
+        confidence: 0,
+        status: "skipped",
+      },
+      expect.objectContaining({
+        trackId: "spotify:track:outro",
+        candidate: expect.objectContaining({
+          videoId: "ytm-outro",
+        }),
+      }),
+    ]);
+
+    await app.close();
+  });
+
   it("persists match decision status changes through the API", async () => {
     const app = buildApp(
       { logger: false },

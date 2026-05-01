@@ -105,23 +105,34 @@ export class ConversionService {
     const conversion = this.requireLatestConversion(id);
     const cancellation: MatchCancellation = { cancelled: false };
     this.activeMatchCancellations.set(id, cancellation);
+    const existingMatches = matchesByTrackOrder(
+      conversion.tracks,
+      conversion.matches,
+    );
+    const existingTrackIds = new Set(
+      existingMatches.map((match) => match.trackId),
+    );
+    const remainingTracks = conversion.tracks.filter(
+      (track) => !existingTrackIds.has(track.id),
+    );
     const matching = conversionJobSchema.parse({
       ...conversion,
       status: "matching",
+      matches: existingMatches,
       updatedAt: new Date().toISOString(),
     });
     this.latestImport = matching;
 
     this.logEvent("info", "api", "conversion.match.started", {
       conversionId: matching.id,
-      trackCount: matching.tracks.length,
+      trackCount: remainingTracks.length,
     });
 
     let matches: MatchDecision[];
     try {
       matches = await this.ytmusic.findMatchesForTracks(
-        matching.tracks,
-        async ({ decision, processedTracks, totalTracks }) => {
+        remainingTracks,
+        async ({ decision, processedTracks }) => {
           const progressConversion = conversionJobSchema.parse({
             ...matching,
             matches: matchesByTrackOrder(matching.tracks, [
@@ -135,8 +146,8 @@ export class ConversionService {
           await options.onProgress?.({
             conversion: progressConversion,
             match: decision,
-            processedTracks,
-            totalTracks,
+            processedTracks: existingMatches.length + processedTracks,
+            totalTracks: matching.tracks.length,
           });
         },
         () => cancellation.cancelled,
@@ -154,7 +165,10 @@ export class ConversionService {
     }
 
     if (cancellation.cancelled) {
-      const cancelled = this.finalizeCancelledMatch(matching, matches);
+      const cancelled = this.finalizeCancelledMatch(
+        matching,
+        this.latestImport?.matches ?? [...existingMatches, ...matches],
+      );
 
       return {
         cancelled: true,
@@ -167,7 +181,10 @@ export class ConversionService {
       ...matching,
       status: "reviewing",
       updatedAt: new Date().toISOString(),
-      matches,
+      matches: matchesByTrackOrder(matching.tracks, [
+        ...existingMatches,
+        ...matches,
+      ]),
     });
     this.latestImport = matched;
     const summary = this.matcher.summarize(matched.matches);

@@ -390,6 +390,28 @@ function matchedConversion() {
   };
 }
 
+function partiallyMatchedConversion() {
+  const imported = importedConversion();
+  const [firstTrack] = imported.tracks;
+
+  if (!firstTrack) {
+    throw new Error("Expected imported conversion to include a track.");
+  }
+
+  return {
+    ...imported,
+    status: "reviewing",
+    matches: [
+      {
+        trackId: firstTrack.id,
+        candidate: null,
+        confidence: 0,
+        status: "skipped",
+      },
+    ],
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -812,6 +834,35 @@ describe("app shell", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("continues matching unmatched songs after stopping", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockApi({
+      latestConversion: partiallyMatchedConversion(),
+      matchedConversion: matchedConversion(),
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /continue matching/i }),
+    );
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          call[0]
+            .toString()
+            .endsWith("/conversions/conversion-spicetify-playlist-1/match"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: /matching with youtube music/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("lets low-confidence accepted songs be unselected back to review", async () => {
