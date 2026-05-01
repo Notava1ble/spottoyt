@@ -112,6 +112,21 @@ function mockApi({
         );
       }
 
+      if (method === "DELETE" && url.endsWith("/auth/youtube-music")) {
+        youtubeMusicStatus = {
+          provider: "youtubeMusic",
+          connected: false,
+          configured: false,
+        };
+
+        return new Response(
+          JSON.stringify({
+            youtubeMusic: youtubeMusicStatus,
+          }),
+          { status: 200 },
+        );
+      }
+
       if (url.endsWith("/imports/latest")) {
         const conversion = await Promise.resolve(
           typeof latestConversion === "function"
@@ -594,6 +609,38 @@ describe("app shell", () => {
       ).toBe(true),
     );
     expect(await screen.findByText("Connected")).toBeInTheDocument();
+  });
+
+  it("disconnects YouTube Music in settings", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockApi({
+      youtubeMusicStatus: {
+        provider: "youtubeMusic",
+        connected: true,
+        configured: true,
+        displayName: "Visar",
+      },
+    });
+
+    render(<App initialEntries={["/settings"]} />);
+
+    await user.click(await screen.findByRole("button", { name: /disconnect/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url.toString().endsWith("/auth/youtube-music") &&
+            init?.method === "DELETE"
+          );
+        }),
+      ).toBe(true),
+    );
+    expect(
+      await screen.findByRole("button", { name: /connect youtube music/i }),
+    ).toBeInTheDocument();
   });
 
   it("keeps YouTube Music settings open when pasted headers do not validate", async () => {
