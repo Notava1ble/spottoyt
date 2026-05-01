@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from main import (
+    add_playlist_items,
     auth_setup,
     auth_status,
     build_search_queries,
@@ -472,6 +473,28 @@ class YtmusicWorkerTest(unittest.TestCase):
             video_ids=["song-1", "song-2"],
         )
         client.add_playlist_items.assert_not_called()
+
+    @patch("main.YTMusic")
+    @patch("main.os.path.exists")
+    def test_add_playlist_items_updates_existing_playlist(self, exists, ytmusic):
+        exists.return_value = True
+        client = Mock()
+        ytmusic.return_value = client
+
+        result = add_playlist_items(
+            "auth/browser.json",
+            "PL123",
+            ["song-3"],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "playlistId": "PL123",
+                "playlistUrl": "https://music.youtube.com/playlist?list=PL123",
+            },
+        )
+        client.add_playlist_items.assert_called_once_with("PL123", ["song-3"])
 
 
 if __name__ == "__main__":

@@ -229,6 +229,34 @@ def create_playlist(
     }
 
 
+def add_playlist_items(
+    auth_path: str,
+    playlist_id: str,
+    video_ids: list[str],
+) -> dict[str, str]:
+    if YTMusic is None:
+        raise RuntimeError("Install ytmusicapi before updating playlists.")
+
+    if not os.path.exists(auth_path):
+        raise RuntimeError("YouTube Music authentication is not configured.")
+
+    client = YTMusic(auth_path)
+    try:
+        client.add_playlist_items(playlist_id, video_ids)
+    except Exception as error:
+        if is_auth_error(error):
+            raise RuntimeError(
+                "Reconnect YouTube Music in Settings before creating."
+            ) from error
+
+        raise
+
+    return {
+        "playlistId": playlist_id,
+        "playlistUrl": f"https://music.youtube.com/playlist?list={playlist_id}",
+    }
+
+
 def is_auth_error(error: Exception) -> bool:
     message = str(error).lower()
     return "401" in message or "unauthorized" in message or "sign in" in message
@@ -352,7 +380,7 @@ def log_event(event: str, **fields: Any) -> None:
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit(
-            "Usage: python src/main.py match|auth-status|auth-setup|create-playlist"
+            "Usage: python src/main.py match|auth-status|auth-setup|create-playlist|add-playlist-items"
         )
 
     command = sys.argv[1]
@@ -399,8 +427,20 @@ def main() -> None:
         )
         return
 
+    if command == "add-playlist-items":
+        print(
+            json.dumps(
+                add_playlist_items(
+                    str(payload.get("authPath", "")),
+                    str(payload.get("playlistId", "")),
+                    payload.get("videoIds", []),
+                )
+            )
+        )
+        return
+
     raise SystemExit(
-        "Usage: python src/main.py match|auth-status|auth-setup|create-playlist"
+        "Usage: python src/main.py match|auth-status|auth-setup|create-playlist|add-playlist-items"
     )
 
 

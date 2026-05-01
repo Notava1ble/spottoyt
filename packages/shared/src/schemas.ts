@@ -81,6 +81,7 @@ export const matchDecisionSchema = z.object({
   candidate: ytmusicCandidateSchema.nullable(),
   confidence: z.number().min(0).max(1),
   status: matchDecisionStatusSchema,
+  syncedAt: z.string().datetime().optional(),
 });
 
 export const matchDecisionUpdateRequestSchema = z.object({
@@ -124,6 +125,8 @@ export const matchingSettingsResponseSchema = z.object({
 
 export const conversionJobSchema = z.object({
   id: z.string(),
+  sourcePlaylistUri: z.string().min(1).optional(),
+  sourceSnapshotAt: z.string().datetime().optional(),
   sourcePlaylistName: z.string(),
   targetPlaylistName: z.string(),
   status: z.enum([

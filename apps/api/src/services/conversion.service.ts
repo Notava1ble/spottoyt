@@ -9,6 +9,7 @@ import {
   type YtmusicCandidate,
 } from "@spottoyt/shared";
 import { type LogEventWriter, noopLogEvent } from "../logging/logger";
+import type { ConversionStore } from "../storage/conversion-store";
 import { MatcherService } from "./matcher.service";
 import { YtmusicService } from "./ytmusic.service";
 
@@ -35,9 +36,13 @@ export class ConversionService {
     ytmusic?: YtmusicService,
     matcher = new MatcherService(),
     private readonly logEvent: LogEventWriter = noopLogEvent,
+    private readonly store?: ConversionStore,
   ) {
     this.ytmusic = ytmusic ?? new YtmusicService(undefined, this.logEvent);
     this.matcher = matcher;
+    this.latestImport = this.normalizeRestoredConversion(
+      this.store?.getLatestImport() ?? null,
+    );
   }
 
   importSpicetifySnapshot(snapshot: SpicetifyPlaylistSnapshot): ConversionJob {
@@ -48,7 +53,17 @@ export class ConversionService {
       trackCount: snapshot.tracks.length,
     });
 
-    if (this.latestImport && this.latestImport.status !== "imported") {
+    const existingConversion =
+      this.store?.getBySpotifyPlaylistUri(snapshot.spotifyPlaylistUri) ??
+      (this.latestImport?.sourcePlaylistUri === snapshot.spotifyPlaylistUri
+        ? this.latestImport
+        : null);
+
+    if (
+      this.latestImport &&
+      this.latestImport.status !== "imported" &&
+      this.latestImport.sourcePlaylistUri !== snapshot.spotifyPlaylistUri
+    ) {
       this.logEvent("warn", "api", "import.spicetify.locked", {
         existingConversionId: this.latestImport.id,
         existingStatus: this.latestImport.status,
@@ -58,22 +73,33 @@ export class ConversionService {
 
     const now = new Date().toISOString();
     const tracks = snapshot.tracks.map(toSpotifyTrack);
+    const matches = matchesByTrackOrder(
+      tracks,
+      existingConversion?.matches ?? [],
+    );
     const conversion = conversionJobSchema.parse({
-      id: `conversion-${playlistIdFromUri(snapshot.spotifyPlaylistUri)}-${Date.now()}`,
+      id:
+        existingConversion?.id ??
+        `conversion-${slugifyId(playlistIdFromUri(snapshot.spotifyPlaylistUri))}`,
+      sourcePlaylistUri: snapshot.spotifyPlaylistUri,
+      sourceSnapshotAt: snapshot.snapshotAt,
       sourcePlaylistName: snapshot.playlistName,
-      targetPlaylistName: snapshot.playlistName,
-      status: "imported",
-      createdAt: now,
+      targetPlaylistName:
+        existingConversion?.targetPlaylistName ?? snapshot.playlistName,
+      status: statusForImportedSnapshot(existingConversion, tracks, matches),
+      createdAt: existingConversion?.createdAt ?? now,
       updatedAt: now,
       tracks,
-      matches: [],
+      matches,
+      playlist: existingConversion?.playlist,
     });
 
-    this.latestImport = conversion;
+    this.saveLatestImport(conversion);
     this.logEvent("info", "api", "import.spicetify.accepted", {
       conversionId: conversion.id,
       playlistName: conversion.sourcePlaylistName,
       trackCount: conversion.tracks.length,
+      preservedMatchCount: conversion.matches.length,
     });
     return conversion;
   }
@@ -88,6 +114,7 @@ export class ConversionService {
       status: this.latestImport?.status,
     });
     this.latestImport = undefined;
+    this.store?.clearLatestImport();
     return { ok: true };
   }
 
@@ -121,7 +148,7 @@ export class ConversionService {
       matches: existingMatches,
       updatedAt: new Date().toISOString(),
     });
-    this.latestImport = matching;
+    this.saveLatestImport(matching);
 
     this.logEvent("info", "api", "conversion.match.started", {
       conversionId: matching.id,
@@ -141,7 +168,7 @@ export class ConversionService {
             ]),
             updatedAt: new Date().toISOString(),
           });
-          this.latestImport = progressConversion;
+          this.saveLatestImport(progressConversion);
 
           await options.onProgress?.({
             conversion: progressConversion,
@@ -186,7 +213,7 @@ export class ConversionService {
         ...matches,
       ]),
     });
-    this.latestImport = matched;
+    this.saveLatestImport(matched);
     const summary = this.matcher.summarize(matched.matches);
 
     this.logEvent("info", "api", "conversion.match.completed", {
@@ -326,6 +353,9 @@ export class ConversionService {
     const acceptedMatches = conversion.matches.filter(
       (match) => match.status === "accepted" && match.candidate,
     );
+    const unsyncedAcceptedMatches = acceptedMatches.filter(
+      (match) => !match.syncedAt,
+    );
     const skippedTrackCount = conversion.tracks.length - acceptedMatches.length;
     const targetPlaylistName =
       input.targetPlaylistName?.trim() || conversion.targetPlaylistName;
@@ -338,21 +368,39 @@ export class ConversionService {
       throw new NoAcceptedMatchesError();
     }
 
+    if (unsyncedAcceptedMatches.length === 0) {
+      const unchanged = conversionJobSchema.parse({
+        ...conversion,
+        status: "complete" as const,
+        targetPlaylistName,
+        updatedAt: new Date().toISOString(),
+      });
+      this.saveLatestImport(unchanged);
+
+      return unchanged;
+    }
+
     this.logEvent("info", "api", "conversion.playlist.create_started", {
       conversionId: conversion.id,
-      acceptedTrackCount: acceptedMatches.length,
+      acceptedTrackCount: unsyncedAcceptedMatches.length,
       targetPlaylistName,
     });
 
     let playlist: Awaited<ReturnType<YtmusicService["createPlaylist"]>>;
     try {
-      playlist = await this.ytmusic.createPlaylist({
-        description: "Converted from Spotify by SpottoYT.",
-        title: targetPlaylistName,
-        videoIds: acceptedMatches.flatMap((match) =>
-          match.candidate ? [match.candidate.videoId] : [],
-        ),
-      });
+      const videoIds = unsyncedAcceptedMatches.flatMap((match) =>
+        match.candidate ? [match.candidate.videoId] : [],
+      );
+      playlist = conversion.playlist
+        ? await this.ytmusic.addPlaylistItems({
+            playlistId: conversion.playlist.playlistId,
+            videoIds,
+          })
+        : await this.ytmusic.createPlaylist({
+            description: "Converted from Spotify by SpottoYT.",
+            title: targetPlaylistName,
+            videoIds,
+          });
     } catch (error) {
       this.logEvent("error", "api", "conversion.playlist.create_failed", {
         conversionId: conversion.id,
@@ -368,24 +416,39 @@ export class ConversionService {
       playlistId: playlist.playlistId,
     });
 
+    const syncedAt = new Date().toISOString();
+    const syncedTrackIds = new Set(
+      unsyncedAcceptedMatches.map((match) => match.trackId),
+    );
     const completed = conversionJobSchema.parse({
       ...conversion,
       status: "complete" as const,
       targetPlaylistName,
       updatedAt: new Date().toISOString(),
+      matches: matchesByTrackOrder(
+        conversion.tracks,
+        conversion.matches.map((match) =>
+          syncedTrackIds.has(match.trackId) ? { ...match, syncedAt } : match,
+        ),
+      ),
       playlist: {
         ...playlist,
-        createdTrackCount: acceptedMatches.length,
+        createdTrackCount: unsyncedAcceptedMatches.length,
         skippedTrackCount,
       },
     });
-    this.latestImport = completed;
+    this.saveLatestImport(completed);
 
     return completed;
   }
 
   private requireLatestConversion(id: string): ConversionJob {
-    if (!this.latestImport || this.latestImport.id !== id) {
+    const conversion =
+      this.latestImport?.id === id
+        ? this.latestImport
+        : this.normalizeRestoredConversion(this.store?.getConversion(id) ?? null);
+
+    if (!conversion) {
       this.logEvent("warn", "api", "conversion.not_found", {
         requestedConversionId: id,
         latestConversionId: this.latestImport?.id,
@@ -393,7 +456,29 @@ export class ConversionService {
       throw new ConversionNotFoundError();
     }
 
-    return this.latestImport;
+    return conversion;
+  }
+
+  private saveLatestImport(conversion: ConversionJob) {
+    const saved = this.store?.saveConversion(conversion) ?? conversion;
+    this.latestImport = saved;
+
+    return saved;
+  }
+
+  private normalizeRestoredConversion(conversion: ConversionJob | null) {
+    if (!conversion) {
+      return undefined;
+    }
+
+    if (conversion.status === "matching") {
+      return conversionJobSchema.parse({
+        ...conversion,
+        status: conversion.matches.length > 0 ? "reviewing" : "imported",
+      });
+    }
+
+    return conversionJobSchema.parse(conversion);
   }
 
   private replaceMatch(conversion: ConversionJob, match: MatchDecision) {
@@ -407,7 +492,7 @@ export class ConversionService {
       updatedAt: new Date().toISOString(),
       matches,
     });
-    this.latestImport = updated;
+    this.saveLatestImport(updated);
     const summary = this.matcher.summarize(updated.matches);
 
     this.logEvent("info", "api", "conversion.match.updated", {
@@ -434,7 +519,7 @@ export class ConversionService {
       updatedAt: new Date().toISOString(),
       matches: matchesByTrackOrder(conversion.tracks, matches),
     });
-    this.latestImport = cancelled;
+    this.saveLatestImport(cancelled);
     const summary = this.matcher.summarize(cancelled.matches);
 
     this.logEvent("info", "api", "conversion.match.cancelled", {
@@ -513,6 +598,33 @@ function toSpotifyTrack(track: SpicetifyPlaylistSnapshot["tracks"][number]) {
   } satisfies SpotifyTrack;
 }
 
+function statusForImportedSnapshot(
+  existingConversion: ConversionJob | null,
+  tracks: SpotifyTrack[],
+  matches: MatchDecision[],
+): ConversionJob["status"] {
+  if (!existingConversion) {
+    return "imported";
+  }
+
+  if (matches.length < tracks.length) {
+    return matches.length > 0 ? "reviewing" : "imported";
+  }
+
+  if (
+    existingConversion.status === "matching" ||
+    existingConversion.status === "creating"
+  ) {
+    return "reviewing";
+  }
+
+  return existingConversion.status;
+}
+
 function playlistIdFromUri(uri: string) {
   return uri.split(":").at(-1) ?? "spicetify";
+}
+
+function slugifyId(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, "-") || "spicetify";
 }

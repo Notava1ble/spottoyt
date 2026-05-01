@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getEnvSource } from "./env";
+import { getEnv, getEnvSource } from "./env";
 
 describe("environment config", () => {
   it("should load local app settings from a parent .env file", () => {
@@ -56,6 +56,29 @@ describe("environment config", () => {
         LOG_LEVEL: "trace",
         SPOTTOYT_LOG_DIR: ".custom-logs",
         SPOTTOYT_LOG_RETAIN: "3",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("should keep auth under the API package and storage under the repo data directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "spottoyt-env-"));
+    const apiCwd = join(root, "apps", "api");
+
+    try {
+      mkdirSync(apiCwd, { recursive: true });
+      writeFileSync(
+        join(root, ".env"),
+        [
+          "DATABASE_URL=file:./data/spottoyt.sqlite",
+          "YTMUSIC_AUTH_PATH=./auth/ytmusic-oauth.json",
+        ].join("\n"),
+      );
+
+      expect(getEnv(apiCwd)).toMatchObject({
+        storagePath: join(root, "data", "spottoyt-storage.json"),
+        ytmusicAuthPath: join(apiCwd, "auth", "ytmusic-oauth.json"),
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

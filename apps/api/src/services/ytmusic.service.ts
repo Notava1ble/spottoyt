@@ -45,6 +45,9 @@ export type YtmusicPlaylistCreateInput = {
 };
 
 export type YtmusicPlaylistCreateClient = {
+  addPlaylistItems?(
+    input: Pick<PlaylistCreationResult, "playlistId"> & { videoIds: string[] },
+  ): Promise<Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">>;
   createPlaylist(
     input: YtmusicPlaylistCreateInput & { privacyStatus: "PRIVATE" },
   ): Promise<Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">>;
@@ -243,6 +246,22 @@ export class YtmusicService {
       privacyStatus: "PRIVATE",
     });
   }
+
+  async addPlaylistItems(input: {
+    playlistId: string;
+    videoIds: string[];
+  }): Promise<{
+    playlistId: string;
+    playlistUrl: string;
+  }> {
+    if (!this.playlistClient.addPlaylistItems) {
+      throw new YtmusicWorkerUnavailableError(
+        "YouTube Music playlist updates are not available.",
+      );
+    }
+
+    return this.playlistClient.addPlaylistItems(input);
+  }
 }
 
 export class PythonYtmusicSearchClient implements YtmusicSearchClient {
@@ -336,6 +355,21 @@ export class PythonYtmusicPlaylistClient
         description: input.description,
         privacyStatus: input.privacyStatus,
         title: input.title,
+        videoIds: input.videoIds,
+      },
+      this.logEvent,
+    );
+  }
+
+  async addPlaylistItems(input: { playlistId: string; videoIds: string[] }) {
+    return runWorker<
+      Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">
+    >(
+      this.pythonCommand,
+      "add-playlist-items",
+      {
+        authPath: this.authPath,
+        playlistId: input.playlistId,
         videoIds: input.videoIds,
       },
       this.logEvent,

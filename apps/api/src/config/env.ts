@@ -1,10 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, parse } from "node:path";
+import { dirname, isAbsolute, join, parse, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type EnvSource = Record<string, string | undefined>;
 
-export function getEnv() {
-  const source = getEnvSource();
+export function getEnv(cwd = process.cwd()) {
+  const envRoot = findNearestDotenvDirectory(cwd) ?? findProjectRoot(cwd);
+  const apiRoot = getApiRoot(envRoot);
+  const source = getEnvSource(cwd);
+  const storagePath = resolveStoragePath(
+    source.SPOTTOYT_STORAGE_PATH ??
+      storagePathFromDatabaseUrl(source.DATABASE_URL) ??
+      "./data/spottoyt-storage.json",
+    envRoot,
+  );
 
   return {
     apiPort: Number(source.API_PORT ?? 4317),
@@ -14,7 +23,11 @@ export function getEnv() {
     logDir: source.SPOTTOYT_LOG_DIR ?? ".logs",
     logRetain: Number(source.SPOTTOYT_LOG_RETAIN ?? 5),
     nodeEnv: source.NODE_ENV ?? "development",
-    ytmusicAuthPath: source.YTMUSIC_AUTH_PATH ?? "./auth/ytmusic-browser.json",
+    storagePath,
+    ytmusicAuthPath: resolveApiLocalPath(
+      source.YTMUSIC_AUTH_PATH ?? "./auth/ytmusic-browser.json",
+      apiRoot,
+    ),
   };
 }
 
@@ -26,6 +39,16 @@ export function getEnvSource(cwd = process.cwd()): EnvSource {
 }
 
 function loadNearestDotenv(cwd: string): EnvSource {
+  const envDirectory = findNearestDotenvDirectory(cwd);
+
+  if (!envDirectory) {
+    return {};
+  }
+
+  return parseDotenv(readFileSync(join(envDirectory, ".env"), "utf8"));
+}
+
+function findNearestDotenvDirectory(cwd: string) {
   const root = parse(cwd).root;
   let current = cwd;
 
@@ -33,11 +56,11 @@ function loadNearestDotenv(cwd: string): EnvSource {
     const envPath = join(current, ".env");
 
     if (existsSync(envPath)) {
-      return parseDotenv(readFileSync(envPath, "utf8"));
+      return current;
     }
 
     if (current === root) {
-      return {};
+      return null;
     }
 
     current = dirname(current);
@@ -77,6 +100,59 @@ function stripQuotes(value: string) {
   }
 
   return value;
+}
+
+function storagePathFromDatabaseUrl(databaseUrl: string | undefined) {
+  if (!databaseUrl?.startsWith("file:")) {
+    return null;
+  }
+
+  return "./data/spottoyt-storage.json";
+}
+
+function resolveStoragePath(path: string, root: string) {
+  return isAbsolute(path) ? path : resolve(root, path);
+}
+
+function resolveApiLocalPath(path: string, apiRoot: string) {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "");
+
+  if (isAbsolute(path)) {
+    return path;
+  }
+
+  if (normalized.startsWith("auth/")) {
+    return resolve(apiRoot, normalized);
+  }
+
+  return resolve(apiRoot, path);
+}
+
+function findProjectRoot(cwd: string) {
+  const root = parse(cwd).root;
+  let current = cwd;
+
+  while (true) {
+    if (existsSync(join(current, "package.json"))) {
+      return current;
+    }
+
+    if (current === root) {
+      return cwd;
+    }
+
+    current = dirname(current);
+  }
+}
+
+function getApiRoot(envRoot: string) {
+  const apiFromEnvRoot = join(envRoot, "apps", "api");
+
+  if (existsSync(apiFromEnvRoot)) {
+    return apiFromEnvRoot;
+  }
+
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
 export const env = getEnv();

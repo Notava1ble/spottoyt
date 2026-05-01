@@ -1,13 +1,15 @@
+import { env } from "../config/env";
+
 export type DatabaseStatus = {
-  driver: "sqlite";
+  driver: "json-file";
   configured: boolean;
   url: string;
 };
 
 export function getDatabaseStatus(): DatabaseStatus {
   return {
-    driver: "sqlite",
-    configured: Boolean(process.env.DATABASE_URL),
-    url: process.env.DATABASE_URL ?? "file:./data/spottoyt.sqlite",
+    driver: "json-file",
+    configured: true,
+    url: env.storagePath,
   };
 }

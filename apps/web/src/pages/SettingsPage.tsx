@@ -31,8 +31,8 @@ import {
 const settings = [
   ["Spicetify API target", "http://127.0.0.1:4317/imports/spicetify"],
   ["Spicetify events", "http://127.0.0.1:4317/events"],
-  ["SQLite database", "./data/spottoyt.sqlite"],
-  ["YouTube Music auth", "./auth/ytmusic-oauth.json"],
+  ["Local storage", "./data/spottoyt-storage.json"],
+  ["YouTube Music auth", "./apps/api/auth/ytmusic-oauth.json"],
 ];
 
 export function SettingsPage() {

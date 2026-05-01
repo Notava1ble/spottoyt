@@ -41,6 +41,10 @@ import {
   type YtmusicAuthClient,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
+import {
+  FileConversionStore,
+  type ConversionStore,
+} from "./storage/conversion-store";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
 
@@ -48,6 +52,7 @@ type SpicetifyImportBody = unknown;
 
 type AppDependencies = {
   conversions?: ConversionService;
+  conversionStore?: ConversionStore | null;
   logEvent?: LogEventWriter;
   matchingSettings?: MatchingSettingsService;
   ytmusicAuth?: Partial<YtmusicAuthClient>;
@@ -158,7 +163,16 @@ export function buildApp(
   };
   const conversions =
     dependencies.conversions ??
-    new ConversionService(ytmusic, undefined, logEvent);
+    new ConversionService(
+      ytmusic,
+      undefined,
+      logEvent,
+      dependencies.conversionStore === undefined
+        ? env.nodeEnv === "test"
+          ? undefined
+          : new FileConversionStore(env.storagePath)
+        : (dependencies.conversionStore ?? undefined),
+    );
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
