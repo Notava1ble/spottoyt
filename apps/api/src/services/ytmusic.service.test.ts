@@ -94,7 +94,7 @@ describe("YtmusicService", () => {
     ]);
   });
 
-  it("should auto-accept official lyric or video candidates when title, artist, and duration agree", async () => {
+  it("should auto-accept official audio or video candidates when title, artist, and duration agree", async () => {
     const track = {
       ...baseTrack,
       id: "spotify:track:where-have-you-been",
@@ -109,8 +109,8 @@ describe("YtmusicService", () => {
           trackId: track.id,
           candidates: [
             {
-              videoId: "ytm-where-have-you-been-lyrics",
-              title: "Rihanna - Where Have You Been (Lyrics)",
+              videoId: "ytm-where-have-you-been-official-audio",
+              title: "Rihanna - Where Have You Been (Official Audio)",
               artists: ["Rihanna"],
               durationMs: 243000,
               resultType: "video",
@@ -125,11 +125,75 @@ describe("YtmusicService", () => {
     expect(matches[0]).toMatchObject({
       trackId: track.id,
       candidate: {
-        videoId: "ytm-where-have-you-been-lyrics",
+        videoId: "ytm-where-have-you-been-official-audio",
       },
       status: "accepted",
     });
     expect(matches[0]?.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("should prefer YouTube Music song candidates over matching lyric videos", async () => {
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: baseTrack.id,
+          candidates: [
+            {
+              videoId: "ytm-midnight-city-lyrics",
+              title: "M83 - Midnight City (Lyrics)",
+              artists: ["Waveform Lyrics"],
+              durationMs: 243000,
+              resultType: "video",
+            },
+            {
+              videoId: "ytm-midnight-city-song",
+              title: "Midnight City",
+              artists: ["M83"],
+              durationMs: 263000,
+              resultType: "song",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const matches = await service.findMatchesForTracks([baseTrack]);
+
+    expect(matches[0]).toMatchObject({
+      trackId: baseTrack.id,
+      candidate: {
+        videoId: "ytm-midnight-city-song",
+      },
+      status: "accepted",
+    });
+  });
+
+  it("should review lyric video matches instead of auto-accepting them", async () => {
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: baseTrack.id,
+          candidates: [
+            {
+              videoId: "ytm-midnight-city-lyrics",
+              title: "M83 - Midnight City (Lyrics)",
+              artists: ["M83"],
+              durationMs: 243000,
+              resultType: "video",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const matches = await service.findMatchesForTracks([baseTrack]);
+
+    expect(matches[0]).toMatchObject({
+      candidate: {
+        videoId: "ytm-midnight-city-lyrics",
+      },
+      status: "review",
+    });
   });
 
   it("should honor configured auto-accept thresholds", async () => {

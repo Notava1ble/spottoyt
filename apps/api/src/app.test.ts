@@ -88,7 +88,20 @@ describe("api shell", () => {
   });
 
   it("returns account connection status", async () => {
-    const app = buildApp({ logger: false });
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicAuth: {
+          async getAuthStatus() {
+            return {
+              provider: "youtubeMusic" as const,
+              connected: false,
+              configured: false,
+            };
+          },
+        },
+      },
+    );
     await app.ready();
 
     const response = await app.inject({ method: "GET", url: "/auth/status" });

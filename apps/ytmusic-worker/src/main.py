@@ -227,7 +227,7 @@ def build_search_queries(
     ]
     video_queries = [
         " ".join(part for part in [title, primary_artist, "official audio"] if part),
-        " ".join(part for part in [title, primary_artist, "lyrics"] if part),
+        " ".join(part for part in [title, primary_artist, "official video"] if part),
     ]
     queries = [(query, "songs") for query in song_queries]
 

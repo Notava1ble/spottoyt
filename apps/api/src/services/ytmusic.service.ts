@@ -98,6 +98,13 @@ const editionTokens = new Set([
   "slowed",
   "sped",
 ]);
+const lyricVideoTokens = new Set(["lyric", "lyrics"]);
+const officialVideoFormatTokens = new Set([
+  "audio",
+  "video",
+  "visualizer",
+  "visualiser",
+]);
 
 export class YtmusicService {
   private readonly searchClient: YtmusicSearchClient;
@@ -371,7 +378,9 @@ function scoreCandidate(track: SpotifyTrack, candidate: YtmusicCandidate) {
   const duration = scoreDuration(track.durationMs, candidate.durationMs);
   const resultType = scoreResultType(candidate);
   const album = scoreAlbum(track, candidate);
-  const penalty = scoreEditionPenalty(track.title, candidate.title);
+  const penalty =
+    scoreEditionPenalty(track.title, candidate.title) *
+    scoreVideoOriginalityPenalty(candidate);
   let confidence =
     title * 0.47 +
     artist * 0.25 +
@@ -537,6 +546,35 @@ function scoreEditionPenalty(trackTitle: string, candidateTitle: string) {
   }
 
   return clamp(penalty, 0.55, 1);
+}
+
+function scoreVideoOriginalityPenalty(candidate: YtmusicCandidate) {
+  if (candidate.resultType === "song") {
+    return 1;
+  }
+
+  const tokens = new Set(tokenize(normalizeText(candidate.title)));
+  const hasLyricToken = [...lyricVideoTokens].some((token) =>
+    tokens.has(token),
+  );
+  const hasOfficialToken = tokens.has("official");
+  const hasOfficialFormatToken = [...officialVideoFormatTokens].some((token) =>
+    tokens.has(token),
+  );
+
+  if (hasLyricToken) {
+    return hasOfficialToken ? 0.86 : 0.72;
+  }
+
+  if (hasOfficialToken) {
+    return hasOfficialFormatToken ? 0.97 : 0.94;
+  }
+
+  if (hasOfficialFormatToken) {
+    return 0.9;
+  }
+
+  return 0.82;
 }
 
 function normalizeSongTitle(value: string) {

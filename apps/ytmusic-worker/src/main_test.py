@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from main import auth_setup, auth_status, create_playlist, match_tracks, normalize_result
+from main import (
+    auth_setup,
+    auth_status,
+    build_search_queries,
+    create_playlist,
+    match_tracks,
+    normalize_result,
+)
 
 
 class YtmusicWorkerTest(unittest.TestCase):
@@ -240,6 +247,21 @@ class YtmusicWorkerTest(unittest.TestCase):
         self.assertTrue(any(call[1].get("filter") == "videos" for call in calls))
         youtube_dl.assert_not_called()
 
+    def test_build_search_queries_uses_official_video_queries_without_lyrics(self):
+        queries = build_search_queries(
+            "Love Me",
+            ["Lil Wayne", "Drake", "Future"],
+            True,
+        )
+
+        self.assertIn(("Love Me Lil Wayne official audio", "videos"), queries)
+        self.assertIn(("Love Me Lil Wayne official video", "videos"), queries)
+        self.assertNotIn(("Love Me Lil Wayne lyrics", "videos"), queries)
+        self.assertLess(
+            queries.index(("Love Me Lil Wayne", "songs")),
+            queries.index(("Love Me Lil Wayne official audio", "videos")),
+        )
+
     @patch("main.YTMusic")
     @patch("main.YoutubeDL")
     def test_match_tracks_skips_video_queries_when_videos_are_disabled(
@@ -272,7 +294,11 @@ class YtmusicWorkerTest(unittest.TestCase):
         youtube_dl.assert_not_called()
 
     @patch("main.YTMusic")
-    def test_match_tracks_continues_when_one_track_search_fails(self, ytmusic):
+    @patch("main.YoutubeDL")
+    def test_match_tracks_continues_when_one_track_search_fails(self, youtube_dl, ytmusic):
+        youtube_dl.return_value.__enter__.return_value.extract_info.return_value = {
+            "entries": []
+        }
         client = Mock()
         client.search.side_effect = [
             RuntimeError("temporary search failure"),
