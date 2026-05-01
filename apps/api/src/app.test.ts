@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +73,49 @@ function spicetifySnapshotWithTracks(
       position: index + 1,
     })),
   };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+async function readUntilSseEvent(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  eventName: string,
+) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      throw new Error(`SSE stream ended before ${eventName}`);
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    if (buffer.includes(`event: ${eventName}`)) {
+      return buffer;
+    }
+  }
 }
 
 describe("api shell", () => {
@@ -533,6 +577,112 @@ describe("api shell", () => {
     expect(matched.json().conversion.matches).toHaveLength(2);
 
     await app.close();
+  });
+
+  it("streams match progress over SSE before the full match request completes", async () => {
+    let releaseSecondTrack: (() => void) | undefined;
+    let markSecondTrackStarted: (() => void) | undefined;
+    const secondTrackStarted = new Promise<void>((resolveStarted) => {
+      markSecondTrackStarted = resolveStarted;
+    });
+    const releaseSecondTrackPromise = new Promise<void>((resolveRelease) => {
+      releaseSecondTrack = resolveRelease;
+    });
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks(tracks) {
+              const [track] = tracks;
+
+              if (track?.title === "Outro") {
+                markSecondTrackStarted?.();
+                await releaseSecondTrackPromise;
+              }
+
+              return tracks.map((item) => ({
+                trackId: item.id,
+                candidates: [
+                  {
+                    videoId: `ytm-${item.title.toLowerCase().replaceAll(" ", "-")}`,
+                    title: item.title,
+                    artists: item.artists,
+                    album: item.album,
+                    durationMs: item.durationMs,
+                    resultType: "song" as const,
+                  },
+                ],
+              }));
+            },
+          }),
+        ),
+      },
+    );
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const eventsAbort = new AbortController();
+    let eventsReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
+    try {
+      const eventsResponse = await withTimeout(
+        fetch(`${baseUrl}/events`, { signal: eventsAbort.signal }),
+        500,
+        "SSE response did not start",
+      );
+      expect(eventsResponse.status).toBe(200);
+
+      eventsReader = eventsResponse.body?.getReader();
+      expect(eventsReader).toBeDefined();
+
+      const progressEvent = readUntilSseEvent(
+        eventsReader as ReadableStreamDefaultReader<Uint8Array>,
+        "conversion-match-progress",
+      );
+      const imported = await fetch(`${baseUrl}/imports/spicetify`, {
+        body: JSON.stringify(
+          spicetifySnapshotWithTracks("Road trip", ["Midnight City", "Outro"]),
+        ),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const conversionId = (await imported.json()).conversion.id;
+      let matchCompleted = false;
+      const matchRequest = fetch(
+        `${baseUrl}/conversions/${conversionId}/match`,
+        {
+          method: "POST",
+        },
+      ).then((response) => {
+        matchCompleted = true;
+        return response;
+      });
+
+      await withTimeout(
+        secondTrackStarted,
+        500,
+        "second track did not start matching",
+      );
+
+      await expect(
+        withTimeout(
+          progressEvent,
+          500,
+          "progress event did not stream before match completion",
+        ),
+      ).resolves.toContain("spotify:track:midnight-city");
+      expect(matchCompleted).toBe(false);
+
+      releaseSecondTrack?.();
+      const matched = await matchRequest;
+      expect(matched.status).toBe(200);
+    } finally {
+      releaseSecondTrack?.();
+      await eventsReader?.cancel().catch(() => {});
+      eventsAbort.abort();
+      await app.close();
+    }
   });
 
   it("cancels an in-progress match before starting later tracks", async () => {

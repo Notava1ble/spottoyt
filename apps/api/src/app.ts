@@ -296,7 +296,8 @@ export function buildApp(
     });
   });
 
-  app.get("/events", async (request, reply) => {
+  app.get("/events", (request, reply) => {
+    reply.hijack();
     reply.raw.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-cache, no-transform",
@@ -304,15 +305,37 @@ export function buildApp(
       "Content-Type": "text/event-stream",
       "X-Accel-Buffering": "no",
     });
-    reply.raw.write(": connected\n\n");
+    reply.raw.flushHeaders?.();
 
-    const unsubscribe = importEvents.subscribe((event) => {
-      reply.raw.write(`event: ${event.type}\n`);
-      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    const writeEvent = (payload: string) => {
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+        reply.raw.write(payload);
+      }
+    };
+
+    writeEvent(": connected\n\n");
+    const heartbeat = setInterval(() => {
+      writeEvent(": heartbeat\n\n");
+    }, 15_000);
+    heartbeat.unref?.();
+    let unsubscribe = () => {};
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+
+      cleanedUp = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    unsubscribe = importEvents.subscribe((event) => {
+      writeEvent(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     });
 
-    request.raw.on("close", unsubscribe);
-    return reply;
+    request.raw.on("close", cleanup);
+    request.raw.on("aborted", cleanup);
+    reply.raw.on("error", cleanup);
   });
 
   app.get("/imports/latest", async () =>
