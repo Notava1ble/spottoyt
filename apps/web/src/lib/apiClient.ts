@@ -1,5 +1,6 @@
 import type {
   AccountStatusResponse,
+  BrowserHeadersAuthRequest,
   ConversionJob,
   LatestImportResponse,
   MatchDecision,
@@ -83,6 +84,21 @@ export function getAccountStatus() {
   return apiGet<AccountStatusResponse>("/auth/status");
 }
 
+export function setupYoutubeMusicBrowserHeaders(
+  request: BrowserHeadersAuthRequest,
+) {
+  return apiPostJson<AccountStatusResponse>(
+    "/auth/youtube-music/browser-headers",
+    request,
+  );
+}
+
+export function disconnectYoutubeMusic() {
+  return apiRequest<AccountStatusResponse>("/auth/youtube-music", {
+    method: "DELETE",
+  });
+}
+
 export function getLatestImport() {
   return apiGet<LatestImportResponse>("/imports/latest");
 }
@@ -144,6 +160,10 @@ export function searchTrackMatch(conversionId: string, trackId: string) {
   }>(
     `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/search`,
   );
+}
+
+export function createPlaylist(conversionId: string) {
+  return apiPost<ConversionJob>(`/conversions/${conversionId}/create`);
 }
 
 export function resetImport() {

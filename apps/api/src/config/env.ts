@@ -14,6 +14,7 @@ export function getEnv() {
     logDir: source.SPOTTOYT_LOG_DIR ?? ".logs",
     logRetain: Number(source.SPOTTOYT_LOG_RETAIN ?? 5),
     nodeEnv: source.NODE_ENV ?? "development",
+    ytmusicAuthPath: source.YTMUSIC_AUTH_PATH ?? "./auth/ytmusic-browser.json",
   };
 }
 

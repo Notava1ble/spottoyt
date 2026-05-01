@@ -100,6 +100,65 @@ describe("api shell", () => {
     await app.close();
   });
 
+  it("saves YouTube Music browser headers through the auth API", async () => {
+    const service = {
+      async getAuthStatus() {
+        return {
+          provider: "youtubeMusic" as const,
+          connected: false,
+          configured: false,
+        };
+      },
+      async setupBrowserHeaders(headersRaw: string) {
+        expect(headersRaw).toBe("accept: */*\ncookie: secret");
+
+        return {
+          provider: "youtubeMusic" as const,
+          connected: true,
+          configured: true,
+        };
+      },
+    };
+    const app = buildApp(
+      { logger: false },
+      { ytmusicAuth: service },
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/youtube-music/browser-headers",
+      payload: { headersRaw: "accept: */*\ncookie: secret" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      youtubeMusic: {
+        provider: "youtubeMusic",
+        connected: true,
+        configured: true,
+      },
+    });
+
+    await app.close();
+  });
+
+  it("rejects empty YouTube Music browser headers", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/youtube-music/browser-headers",
+      payload: { headersRaw: "   " },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("Invalid YouTube Music auth headers");
+
+    await app.close();
+  });
+
   it("reads and saves matching settings through the API", async () => {
     const settingsPath = createSettingsPath();
     const settings = new MatchingSettingsService(settingsPath);
@@ -583,6 +642,131 @@ describe("api shell", () => {
     expect(searched.json().conversion.matches[0]).toEqual(
       searched.json().match,
     );
+
+    await app.close();
+  });
+
+  it("creates a YouTube Music playlist from accepted matches in track order", async () => {
+    const playlistRequests: Array<{
+      title: string;
+      videoIds: string[];
+    }> = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService(
+            {
+              async findCandidatesForTracks(tracks) {
+                return tracks.map((track, index) => ({
+                  trackId: track.id,
+                  candidates: [
+                    {
+                      videoId: `ytm-${index + 1}`,
+                      title: track.title,
+                      artists: track.artists,
+                      album: track.album,
+                      durationMs: track.durationMs,
+                      resultType: "song" as const,
+                    },
+                  ],
+                }));
+              },
+            },
+            undefined,
+            undefined,
+            {
+              async createPlaylist(input) {
+                playlistRequests.push({
+                  title: input.title,
+                  videoIds: input.videoIds,
+                });
+
+                return {
+                  playlistId: "PLroadtrip",
+                  playlistUrl:
+                    "https://music.youtube.com/playlist?list=PLroadtrip",
+                };
+              },
+            },
+          ),
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshotWithTracks("Road trip", [
+        "Midnight City",
+        "Outro",
+      ]),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:outro")}/status`,
+      payload: { status: "skipped" },
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/create`,
+    });
+
+    expect(created.statusCode).toBe(200);
+    expect(created.json().status).toBe("complete");
+    expect(created.json().playlist).toEqual({
+      playlistId: "PLroadtrip",
+      playlistUrl: "https://music.youtube.com/playlist?list=PLroadtrip",
+      createdTrackCount: 1,
+      skippedTrackCount: 1,
+    });
+    expect(playlistRequests).toEqual([
+      {
+        title: "Road trip - YouTube Music",
+        videoIds: ["ytm-1"],
+      },
+    ]);
+
+    await app.close();
+  });
+
+  it("rejects playlist creation when there are no accepted matches", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        conversions: new ConversionService(
+          new YtmusicService({
+            async findCandidatesForTracks() {
+              return [];
+            },
+          }),
+        ),
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/match`,
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/create`,
+    });
+
+    expect(created.statusCode).toBe(409);
+    expect(created.json().error).toBe("No accepted matches");
 
     await app.close();
   });

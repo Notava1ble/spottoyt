@@ -212,14 +212,34 @@ export class ConversionService {
 
   async createPlaylist(id: string) {
     const conversion = this.getConversion(id);
+    const acceptedMatches = conversion.matches.filter(
+      (match) => match.status === "accepted" && match.candidate,
+    );
+    const skippedTrackCount = conversion.tracks.length - acceptedMatches.length;
+
+    if (conversion.status !== "reviewing" && conversion.status !== "complete") {
+      throw new InvalidConversionStateError();
+    }
+
+    if (acceptedMatches.length === 0) {
+      throw new NoAcceptedMatchesError();
+    }
+
     this.logEvent("info", "api", "conversion.playlist.create_started", {
       conversionId: conversion.id,
+      acceptedTrackCount: acceptedMatches.length,
       targetPlaylistName: conversion.targetPlaylistName,
     });
 
     let playlist: Awaited<ReturnType<YtmusicService["createPlaylist"]>>;
     try {
-      playlist = await this.ytmusic.createPlaylist();
+      playlist = await this.ytmusic.createPlaylist({
+        description: "Converted from Spotify by SpottoYT.",
+        title: conversion.targetPlaylistName,
+        videoIds: acceptedMatches.flatMap((match) =>
+          match.candidate ? [match.candidate.videoId] : [],
+        ),
+      });
     } catch (error) {
       this.logEvent("error", "api", "conversion.playlist.create_failed", {
         conversionId: conversion.id,
@@ -235,12 +255,20 @@ export class ConversionService {
       playlistId: playlist.playlistId,
     });
 
-    return {
+    const completed = conversionJobSchema.parse({
       ...conversion,
       status: "complete" as const,
       targetPlaylistName: conversion.targetPlaylistName,
-      playlist,
-    };
+      updatedAt: new Date().toISOString(),
+      playlist: {
+        ...playlist,
+        createdTrackCount: acceptedMatches.length,
+        skippedTrackCount,
+      },
+    });
+    this.latestImport = completed;
+
+    return completed;
   }
 
   private requireLatestConversion(id: string): ConversionJob {
@@ -324,6 +352,18 @@ export class MatchNotFoundError extends Error {
 export class InvalidMatchDecisionError extends Error {
   constructor() {
     super("Match decision is not valid for the current track");
+  }
+}
+
+export class InvalidConversionStateError extends Error {
+  constructor() {
+    super("Conversion must be ready for review before creating a playlist");
+  }
+}
+
+export class NoAcceptedMatchesError extends Error {
+  constructor() {
+    super("No accepted matches");
   }
 }
 

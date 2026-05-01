@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type {
   accountStatusResponseSchema,
+  browserHeadersAuthRequestSchema,
   connectionStatusSchema,
   conversionJobSchema,
   importEventSchema,
@@ -11,6 +12,7 @@ import type {
   matchingSettingsPatchSchema,
   matchingSettingsResponseSchema,
   matchingSettingsSchema,
+  playlistCreationResultSchema,
   spicetifyImportResponseSchema,
   spicetifyPlaylistSnapshotSchema,
   spicetifyPlaylistTrackSchema,
@@ -20,6 +22,12 @@ import type {
 
 export type ConnectionStatus = z.infer<typeof connectionStatusSchema>;
 export type AccountStatusResponse = z.infer<typeof accountStatusResponseSchema>;
+export type BrowserHeadersAuthRequest = z.infer<
+  typeof browserHeadersAuthRequestSchema
+>;
+export type PlaylistCreationResult = z.infer<
+  typeof playlistCreationResultSchema
+>;
 export type SpotifyTrack = z.infer<typeof spotifyTrackSchema>;
 export type SpicetifyPlaylistTrack = z.infer<
   typeof spicetifyPlaylistTrackSchema

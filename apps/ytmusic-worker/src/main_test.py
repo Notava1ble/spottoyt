@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from main import match_tracks, normalize_result
+from main import auth_setup, auth_status, create_playlist, match_tracks, normalize_result
 
 
 class YtmusicWorkerTest(unittest.TestCase):
@@ -357,6 +357,70 @@ class YtmusicWorkerTest(unittest.TestCase):
     def test_match_tracks_reports_missing_ytmusicapi(self):
         with self.assertRaisesRegex(RuntimeError, "Install ytmusicapi"):
             match_tracks([], limit=5)
+
+    @patch("main.ytmusicapi")
+    def test_auth_setup_writes_browser_headers(self, ytmusicapi):
+        ytmusicapi.setup.return_value = "{}"
+
+        result = auth_setup("auth/browser.json", "accept: */*\ncookie: secret")
+
+        self.assertEqual(result, {"provider": "youtubeMusic", "connected": True, "configured": True})
+        ytmusicapi.setup.assert_called_once_with(
+            filepath="auth/browser.json",
+            headers_raw="accept: */*\ncookie: secret",
+        )
+
+    @patch("main.YTMusic")
+    @patch("main.os.path.exists")
+    def test_auth_status_reports_valid_auth_file(self, exists, ytmusic):
+        exists.return_value = True
+        client = Mock()
+        client.get_library_playlists.return_value = []
+        ytmusic.return_value = client
+
+        result = auth_status("auth/browser.json")
+
+        self.assertEqual(result, {"provider": "youtubeMusic", "connected": True, "configured": True})
+        ytmusic.assert_called_once_with("auth/browser.json")
+
+    @patch("main.os.path.exists")
+    def test_auth_status_reports_missing_auth_file(self, exists):
+        exists.return_value = False
+
+        result = auth_status("auth/browser.json")
+
+        self.assertEqual(result, {"provider": "youtubeMusic", "connected": False, "configured": False})
+
+    @patch("main.YTMusic")
+    @patch("main.os.path.exists")
+    def test_create_playlist_creates_private_playlist_and_adds_items(self, exists, ytmusic):
+        exists.return_value = True
+        client = Mock()
+        client.create_playlist.return_value = "PL123"
+        client.add_playlist_items.return_value = "STATUS_SUCCEEDED"
+        ytmusic.return_value = client
+
+        result = create_playlist(
+            "auth/browser.json",
+            "Road trip - YouTube Music",
+            "Converted from Spotify by SpottoYT.",
+            "PRIVATE",
+            ["song-1", "song-2"],
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "playlistId": "PL123",
+                "playlistUrl": "https://music.youtube.com/playlist?list=PL123",
+            },
+        )
+        client.create_playlist.assert_called_once_with(
+            "Road trip - YouTube Music",
+            "Converted from Spotify by SpottoYT.",
+            privacy_status="PRIVATE",
+        )
+        client.add_playlist_items.assert_called_once_with("PL123", ["song-1", "song-2"])
 
 
 if __name__ == "__main__":

@@ -7,10 +7,23 @@ import {
 } from "@spottoyt/ui/components/card";
 import { Button } from "@spottoyt/ui/components/button";
 import { Input } from "@spottoyt/ui/components/input";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@spottoyt/ui/components/dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Radio } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AccountConnectionCard } from "../components/auth/AccountConnectionCard";
+import {
+  disconnectYoutubeMusic,
+  getAccountStatus,
   getMatchingSettings,
+  setupYoutubeMusicBrowserHeaders,
   updateMatchingSettings,
 } from "../lib/apiClient";
 
@@ -27,12 +40,18 @@ export function SettingsPage() {
     queryKey: ["matching-settings"],
     queryFn: getMatchingSettings,
   });
+  const accountStatus = useQuery({
+    queryKey: ["auth-status"],
+    queryFn: getAccountStatus,
+  });
   const [draft, setDraft] = useState({
     autoAcceptThreshold: "",
     includeVideos: true,
     reviewThreshold: "",
     searchLimit: "",
   });
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [headersRaw, setHeadersRaw] = useState("");
   const saveMatchingSettings = useMutation({
     mutationFn: () =>
       updateMatchingSettings({
@@ -44,6 +63,21 @@ export function SettingsPage() {
     onSuccess: (response) => {
       queryClient.setQueryData(["matching-settings"], response);
       setDraft(toDraft(response.settings));
+    },
+  });
+  const saveYoutubeMusicAuth = useMutation({
+    mutationFn: () =>
+      setupYoutubeMusicBrowserHeaders({ headersRaw: headersRaw.trim() }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["auth-status"], response);
+      setHeadersRaw("");
+      setAuthDialogOpen(false);
+    },
+  });
+  const disconnectAuth = useMutation({
+    mutationFn: disconnectYoutubeMusic,
+    onSuccess: (response) => {
+      queryClient.setQueryData(["auth-status"], response);
     },
   });
 
@@ -89,6 +123,85 @@ export function SettingsPage() {
           ))}
         </CardContent>
       </Card>
+      <AccountConnectionCard
+        Icon={Radio}
+        name="YouTube Music"
+        status={
+          accountStatus.data?.youtubeMusic.connected
+            ? "connected"
+            : "not-connected"
+        }
+        actionLabel={
+          accountStatus.data?.youtubeMusic.connected
+            ? "Disconnect"
+            : "Connect YouTube Music"
+        }
+        detail={
+          accountStatus.data?.youtubeMusic.connected
+            ? "Browser credentials are available locally."
+            : accountStatus.data?.youtubeMusic.configured
+              ? "Stored browser credentials need to be refreshed."
+              : "Paste browser request headers to enable playlist creation."
+        }
+        disabled={
+          accountStatus.isLoading ||
+          saveYoutubeMusicAuth.isPending ||
+          disconnectAuth.isPending
+        }
+        onAction={() => {
+          if (accountStatus.data?.youtubeMusic.connected) {
+            disconnectAuth.mutate();
+            return;
+          }
+
+          setAuthDialogOpen(true);
+        }}
+      />
+      <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connect YouTube Music</DialogTitle>
+            <DialogDescription>
+              Paste copied request headers from an authenticated YouTube Music
+              browser request.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2" htmlFor="youtube-music-headers">
+            <span className="font-medium text-foreground text-sm">
+              Request headers
+            </span>
+            <textarea
+              className="min-h-44 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              id="youtube-music-headers"
+              onChange={(event) => setHeadersRaw(event.target.value)}
+              value={headersRaw}
+            />
+          </label>
+          {saveYoutubeMusicAuth.isError ? (
+            <p className="text-destructive text-sm">
+              YouTube Music connection failed.
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              onClick={() => setAuthDialogOpen(false)}
+              type="button"
+              variant="secondary"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                headersRaw.trim().length === 0 || saveYoutubeMusicAuth.isPending
+              }
+              onClick={() => saveYoutubeMusicAuth.mutate()}
+              type="button"
+            >
+              Save connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Card>
         <CardHeader>
           <CardTitle>Matching</CardTitle>

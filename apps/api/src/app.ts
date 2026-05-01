@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import {
   accountStatusResponseSchema,
+  browserHeadersAuthRequestSchema,
   type ConversionJob,
   latestImportResponseSchema,
   matchDecisionUpdateRequestSchema,
@@ -21,9 +22,11 @@ import {
 import {
   ConversionNotFoundError,
   ConversionService,
+  InvalidConversionStateError,
   ImportLockedError,
   InvalidMatchDecisionError,
   MatchNotFoundError,
+  NoAcceptedMatchesError,
   TrackNotFoundError,
 } from "./services/conversion.service";
 import { ImportEventsService } from "./services/import-events.service";
@@ -31,6 +34,7 @@ import { MatchingSettingsService } from "./services/matching-settings.service";
 import {
   type YtmusicSearchClient,
   YtmusicService,
+  type YtmusicAuthClient,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
 import { getDatabaseStatus } from "./storage/db";
@@ -42,6 +46,7 @@ type AppDependencies = {
   conversions?: ConversionService;
   logEvent?: LogEventWriter;
   matchingSettings?: MatchingSettingsService;
+  ytmusicAuth?: Partial<YtmusicAuthClient>;
   ytmusicSearchClient?: YtmusicSearchClient;
 };
 
@@ -105,6 +110,15 @@ const spicetifyImportBodySchema = {
   },
 } as const;
 
+const browserHeadersAuthBodySchema = {
+  type: "object",
+  required: ["headersRaw"],
+  additionalProperties: false,
+  properties: {
+    headersRaw: { type: "string", minLength: 1 },
+  },
+} as const;
+
 export function buildApp(
   options: FastifyServerOptions = {},
   dependencies: AppDependencies = {},
@@ -120,17 +134,26 @@ export function buildApp(
     dependencies.logEvent ?? createLogEventWriter(app.log || false);
   const matchingSettings =
     dependencies.matchingSettings ?? new MatchingSettingsService();
+  const ytmusic = new YtmusicService(
+    dependencies.ytmusicSearchClient,
+    logEvent,
+    matchingSettings,
+  );
+  const ytmusicAuth = {
+    disconnectAuth:
+      dependencies.ytmusicAuth?.disconnectAuth?.bind(dependencies.ytmusicAuth) ??
+      ytmusic.disconnectAuth.bind(ytmusic),
+    getAuthStatus:
+      dependencies.ytmusicAuth?.getAuthStatus?.bind(dependencies.ytmusicAuth) ??
+      ytmusic.getAuthStatus.bind(ytmusic),
+    setupBrowserHeaders:
+      dependencies.ytmusicAuth?.setupBrowserHeaders?.bind(
+        dependencies.ytmusicAuth,
+      ) ?? ytmusic.setupBrowserHeaders.bind(ytmusic),
+  };
   const conversions =
     dependencies.conversions ??
-    new ConversionService(
-      new YtmusicService(
-        dependencies.ytmusicSearchClient,
-        logEvent,
-        matchingSettings,
-      ),
-      undefined,
-      logEvent,
-    );
+    new ConversionService(ytmusic, undefined, logEvent);
   const importEvents = new ImportEventsService();
 
   app.register(cors, {
@@ -175,15 +198,52 @@ export function buildApp(
     service: "spottoyt-api",
   }));
 
-  app.get("/auth/status", async () =>
-    accountStatusResponseSchema.parse({
-      youtubeMusic: {
-        provider: "youtubeMusic",
-        connected: false,
-        configured: false,
-      },
-    }),
-  );
+  app.get("/auth/status", async (_request, reply) => {
+    try {
+      return accountStatusResponseSchema.parse({
+        youtubeMusic: await ytmusicAuth.getAuthStatus(),
+      });
+    } catch (error) {
+      return handleConversionError(error, reply);
+    }
+  });
+
+  app.post<{ Body: unknown }>("/auth/youtube-music/browser-headers", {
+    schema: {
+      body: browserHeadersAuthBodySchema,
+    },
+    handler: async (request, reply) => {
+      const parsed = browserHeadersAuthRequestSchema.safeParse(request.body);
+
+      if (!parsed.success || parsed.data.headersRaw.trim().length === 0) {
+        reply.code(400);
+        return {
+          error: "Invalid YouTube Music auth headers",
+          message: "Paste copied YouTube Music browser request headers.",
+        };
+      }
+
+      try {
+        return accountStatusResponseSchema.parse({
+          youtubeMusic: await ytmusicAuth.setupBrowserHeaders(
+            parsed.data.headersRaw,
+          ),
+        });
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
+  app.delete("/auth/youtube-music", async (_request, reply) => {
+    try {
+      return accountStatusResponseSchema.parse({
+        youtubeMusic: await ytmusicAuth.disconnectAuth(),
+      });
+    } catch (error) {
+      return handleConversionError(error, reply);
+    }
+  });
 
   app.get("/system/status", async () => ({
     database: getDatabaseStatus(),
@@ -450,6 +510,16 @@ function handleConversionError(
   if (error instanceof InvalidMatchDecisionError) {
     reply.code(409);
     return { error: "Invalid match decision", message: error.message };
+  }
+
+  if (error instanceof InvalidConversionStateError) {
+    reply.code(409);
+    return { error: "Invalid conversion state", message: error.message };
+  }
+
+  if (error instanceof NoAcceptedMatchesError) {
+    reply.code(409);
+    return { error: "No accepted matches", message: error.message };
   }
 
   if (error instanceof YtmusicWorkerUnavailableError) {

@@ -1,16 +1,19 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { platform } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
+  type ConnectionStatus,
   type MatchDecision,
   type MatchingSettings,
+  type PlaylistCreationResult,
   matchDecisionSchema,
   mockConversionJob,
   type SpotifyTrack,
   type YtmusicCandidate,
 } from "@spottoyt/shared";
+import { env } from "../config/env";
 import { type LogEventWriter, noopLogEvent } from "../logging/logger";
 import { parseWorkerDiagnostics } from "../logging/worker-diagnostics";
 import {
@@ -33,6 +36,24 @@ export type YtmusicSearchClient = {
     tracks: SpotifyTrack[],
     options?: YtmusicSearchOptions,
   ): Promise<YtmusicCandidateSearchResult[]>;
+};
+
+export type YtmusicPlaylistCreateInput = {
+  description: string;
+  title: string;
+  videoIds: string[];
+};
+
+export type YtmusicPlaylistCreateClient = {
+  createPlaylist(
+    input: YtmusicPlaylistCreateInput & { privacyStatus: "PRIVATE" },
+  ): Promise<Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">>;
+};
+
+export type YtmusicAuthClient = {
+  disconnectAuth(): Promise<ConnectionStatus>;
+  getAuthStatus(): Promise<ConnectionStatus>;
+  setupBrowserHeaders(headersRaw: string): Promise<ConnectionStatus>;
 };
 
 export type MatchDecisionProgress = {
@@ -80,14 +101,28 @@ const editionTokens = new Set([
 
 export class YtmusicService {
   private readonly searchClient: YtmusicSearchClient;
+  private readonly playlistClient: YtmusicPlaylistCreateClient;
+  private readonly authClient: YtmusicAuthClient;
 
   constructor(
     searchClient?: YtmusicSearchClient,
     private readonly logEvent: LogEventWriter = noopLogEvent,
     private readonly matchingSettings: MatchingSettingsProvider = new MatchingSettingsService(),
+    playlistClient?: YtmusicPlaylistCreateClient,
+    authClient?: YtmusicAuthClient,
   ) {
     this.searchClient =
       searchClient ?? new PythonYtmusicSearchClient(undefined, this.logEvent);
+    this.playlistClient =
+      playlistClient ??
+      new PythonYtmusicPlaylistClient(
+        undefined,
+        env.ytmusicAuthPath,
+        this.logEvent,
+      );
+    this.authClient =
+      authClient ??
+      new PythonYtmusicAuthClient(undefined, env.ytmusicAuthPath, this.logEvent);
   }
 
   async findMockMatches(): Promise<MatchDecision[]> {
@@ -145,11 +180,26 @@ export class YtmusicService {
     return matchDecisionSchema.array().parse(matches);
   }
 
-  async createPlaylist(): Promise<{ playlistId: string; playlistUrl: string }> {
-    return {
-      playlistId: "ytm-demo-playlist",
-      playlistUrl: "https://music.youtube.com/playlist?list=ytm-demo-playlist",
-    };
+  async getAuthStatus() {
+    return this.authClient.getAuthStatus();
+  }
+
+  async setupBrowserHeaders(headersRaw: string) {
+    return this.authClient.setupBrowserHeaders(headersRaw);
+  }
+
+  async disconnectAuth() {
+    return this.authClient.disconnectAuth();
+  }
+
+  async createPlaylist(input: YtmusicPlaylistCreateInput): Promise<{
+    playlistId: string;
+    playlistUrl: string;
+  }> {
+    return this.playlistClient.createPlaylist({
+      ...input,
+      privacyStatus: "PRIVATE",
+    });
   }
 }
 
@@ -166,15 +216,81 @@ export class PythonYtmusicSearchClient implements YtmusicSearchClient {
       searchLimit: defaultMatchingSettings.searchLimit,
     },
   ): Promise<YtmusicCandidateSearchResult[]> {
-    const workerPath = join(getWorkerDirectory(), "src", "main.py");
-
-    return runWorker(
+    const response = await runWorker<unknown>(
       this.pythonCommand,
-      workerPath,
+      "match",
       {
         includeVideos: options.includeVideos,
         limit: options.searchLimit,
         tracks,
+      },
+      this.logEvent,
+    );
+
+    return parseWorkerResults(JSON.stringify(response));
+  }
+}
+
+export class PythonYtmusicAuthClient implements YtmusicAuthClient {
+  constructor(
+    private readonly pythonCommand = getDefaultPythonCommand(),
+    private readonly authPath = env.ytmusicAuthPath,
+    private readonly logEvent: LogEventWriter = noopLogEvent,
+  ) {}
+
+  async getAuthStatus(): Promise<ConnectionStatus> {
+    return runWorker<ConnectionStatus>(
+      this.pythonCommand,
+      "auth-status",
+      {
+        authPath: this.authPath,
+      },
+      this.logEvent,
+    );
+  }
+
+  async setupBrowserHeaders(headersRaw: string): Promise<ConnectionStatus> {
+    return runWorker<ConnectionStatus>(
+      this.pythonCommand,
+      "auth-setup",
+      {
+        authPath: this.authPath,
+        headersRaw,
+      },
+      this.logEvent,
+    );
+  }
+
+  async disconnectAuth(): Promise<ConnectionStatus> {
+    rmSync(this.authPath, { force: true });
+
+    return {
+      provider: "youtubeMusic",
+      connected: false,
+      configured: false,
+    };
+  }
+}
+
+export class PythonYtmusicPlaylistClient implements YtmusicPlaylistCreateClient {
+  constructor(
+    private readonly pythonCommand = getDefaultPythonCommand(),
+    private readonly authPath = env.ytmusicAuthPath,
+    private readonly logEvent: LogEventWriter = noopLogEvent,
+  ) {}
+
+  async createPlaylist(
+    input: YtmusicPlaylistCreateInput & { privacyStatus: "PRIVATE" },
+  ) {
+    return runWorker<Pick<PlaylistCreationResult, "playlistId" | "playlistUrl">>(
+      this.pythonCommand,
+      "create-playlist",
+      {
+        authPath: this.authPath,
+        description: input.description,
+        privacyStatus: input.privacyStatus,
+        title: input.title,
+        videoIds: input.videoIds,
       },
       this.logEvent,
     );
@@ -459,18 +575,31 @@ function roundConfidence(confidence: number) {
 
 async function runWorker(
   pythonCommand: string,
-  workerPath: string,
-  payload: { includeVideos: boolean; limit: number; tracks: SpotifyTrack[] },
+  command: string,
+  payload: Record<string, unknown>,
   logEvent: LogEventWriter,
-): Promise<YtmusicCandidateSearchResult[]> {
+): Promise<YtmusicCandidateSearchResult[]>;
+async function runWorker<T>(
+  pythonCommand: string,
+  command: string,
+  payload: Record<string, unknown>,
+  logEvent: LogEventWriter,
+): Promise<T>;
+async function runWorker<T>(
+  pythonCommand: string,
+  command: string,
+  payload: Record<string, unknown>,
+  logEvent: LogEventWriter,
+): Promise<T> {
+  const workerPath = join(getWorkerDirectory(), "src", "main.py");
+
   return new Promise((resolvePromise, reject) => {
     logEvent("info", "api", "ytmusic.worker.spawned", {
+      command,
       workerPath,
-      trackCount: payload.tracks.length,
-      includeVideos: payload.includeVideos,
-      limit: payload.limit,
+      trackCount: Array.isArray(payload.tracks) ? payload.tracks.length : 0,
     });
-    const child = spawn(pythonCommand, [workerPath, "match"], {
+    const child = spawn(pythonCommand, [workerPath, command], {
       stdio: ["pipe", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
@@ -513,9 +642,7 @@ async function runWorker(
       }
 
       try {
-        resolvePromise(
-          parseWorkerResults(Buffer.concat(stdout).toString("utf8")),
-        );
+        resolvePromise(JSON.parse(Buffer.concat(stdout).toString("utf8")) as T);
       } catch (error) {
         reject(
           new YtmusicWorkerUnavailableError(

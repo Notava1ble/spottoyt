@@ -9,6 +9,7 @@ import { MatchProgressDialog } from "../components/conversion/MatchProgressDialo
 import { MatchReviewTable } from "../components/conversion/MatchReviewTable";
 import { PlaylistImportPanel } from "../components/conversion/PlaylistImportPanel";
 import {
+  createPlaylist,
   getAccountStatus,
   getEventsUrl,
   getLatestImport,
@@ -96,6 +97,29 @@ export function ConvertPage() {
         ...current,
         errorMessage: message,
       }));
+    },
+  });
+  const create = useMutation({
+    mutationFn: (id: string) => createPlaylist(id),
+    onMutate: (id) => {
+      logClientEvent("info", "web.conversion.create.clicked", {
+        conversionId: id,
+      });
+    },
+    onSuccess: (nextConversion) => {
+      logClientEvent("info", "web.conversion.create.completed", {
+        conversionId: nextConversion.id,
+        playlistId: nextConversion.playlist?.playlistId,
+      });
+      setLiveConversion(nextConversion);
+      queryClient.setQueryData(["imports-latest"], {
+        conversion: nextConversion,
+      });
+    },
+    onError: (error) => {
+      logClientEvent("error", "web.conversion.create.failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
     },
   });
   const reset = useMutation({
@@ -281,8 +305,14 @@ export function ConvertPage() {
       <Card>
         <CardContent className="p-5">
           <PlaylistImportPanel
+            creating={create.isPending}
             latestConversion={conversion}
             matching={match.isPending}
+            onCreate={() => {
+              if (conversion) {
+                create.mutate(conversion.id);
+              }
+            }}
             onMatch={() => {
               if (conversion) {
                 match.mutate(conversion.id);

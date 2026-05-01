@@ -15,6 +15,17 @@ export const accountStatusResponseSchema = z.object({
   youtubeMusic: connectionStatusSchema,
 });
 
+export const browserHeadersAuthRequestSchema = z.object({
+  headersRaw: z.string().min(1),
+});
+
+export const playlistCreationResultSchema = z.object({
+  playlistId: z.string(),
+  playlistUrl: z.string().url(),
+  createdTrackCount: z.number().int().nonnegative(),
+  skippedTrackCount: z.number().int().nonnegative(),
+});
+
 export const spotifyTrackSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -108,6 +119,7 @@ export const conversionJobSchema = z.object({
   updatedAt: z.string().datetime(),
   tracks: z.array(spotifyTrackSchema),
   matches: z.array(matchDecisionSchema),
+  playlist: playlistCreationResultSchema.optional(),
 });
 
 export const latestImportResponseSchema = z.object({

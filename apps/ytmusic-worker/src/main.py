@@ -1,7 +1,13 @@
 import json
+import os
 import sys
 import time
 from typing import Any
+
+try:
+    import ytmusicapi
+except ModuleNotFoundError:
+    ytmusicapi = None
 
 try:
     from ytmusicapi import YTMusic
@@ -136,6 +142,77 @@ def match_tracks(
     return matches
 
 
+def auth_status(auth_path: str) -> dict[str, Any]:
+    if not os.path.exists(auth_path):
+        return {"provider": "youtubeMusic", "connected": False, "configured": False}
+
+    if YTMusic is None:
+        return {
+            "provider": "youtubeMusic",
+            "connected": False,
+            "configured": True,
+            "error": "Install ytmusicapi before authenticating.",
+        }
+
+    try:
+        client = YTMusic(auth_path)
+        client.get_library_playlists(limit=1)
+    except Exception as error:
+        log_event("ytmusic.auth.status.failed", message=str(error))
+        return {
+            "provider": "youtubeMusic",
+            "connected": False,
+            "configured": True,
+            "error": "YouTube Music authentication failed.",
+        }
+
+    return {"provider": "youtubeMusic", "connected": True, "configured": True}
+
+
+def auth_setup(auth_path: str, headers_raw: str) -> dict[str, Any]:
+    if ytmusicapi is None:
+        raise RuntimeError("Install ytmusicapi before authenticating.")
+
+    parent = os.path.dirname(auth_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    ytmusicapi.setup(filepath=auth_path, headers_raw=headers_raw)
+    return {"provider": "youtubeMusic", "connected": True, "configured": True}
+
+
+def create_playlist(
+    auth_path: str,
+    title: str,
+    description: str,
+    privacy_status: str,
+    video_ids: list[str],
+) -> dict[str, str]:
+    if YTMusic is None:
+        raise RuntimeError("Install ytmusicapi before creating playlists.")
+
+    if not os.path.exists(auth_path):
+        raise RuntimeError("YouTube Music authentication is not configured.")
+
+    client = YTMusic(auth_path)
+    playlist_id = client.create_playlist(
+        title,
+        description,
+        privacy_status=privacy_status,
+    )
+
+    if not isinstance(playlist_id, str):
+        raise RuntimeError("YouTube Music returned an invalid playlist response.")
+
+    if video_ids:
+        client.add_playlist_items(playlist_id, video_ids)
+
+    return {
+        "playlistId": playlist_id,
+        "playlistUrl": f"https://music.youtube.com/playlist?list={playlist_id}",
+    }
+
+
 def build_search_queries(
     title: str,
     artists: list[str],
@@ -252,16 +329,58 @@ def log_event(event: str, **fields: Any) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2 or sys.argv[1] != "match":
-        raise SystemExit("Usage: python src/main.py match")
+    if len(sys.argv) < 2:
+        raise SystemExit(
+            "Usage: python src/main.py match|auth-status|auth-setup|create-playlist"
+        )
 
+    command = sys.argv[1]
     payload = json.load(sys.stdin)
-    matches = match_tracks(
-        payload.get("tracks", []),
-        int(payload.get("limit", 5)),
-        bool(payload.get("includeVideos", True)),
+
+    if command == "match":
+        print(
+            json.dumps(
+                match_tracks(
+                    payload.get("tracks", []),
+                    int(payload.get("limit", 5)),
+                    bool(payload.get("includeVideos", True)),
+                )
+            )
+        )
+        return
+
+    if command == "auth-status":
+        print(json.dumps(auth_status(str(payload.get("authPath", "")))))
+        return
+
+    if command == "auth-setup":
+        print(
+            json.dumps(
+                auth_setup(
+                    str(payload.get("authPath", "")),
+                    str(payload.get("headersRaw", "")),
+                )
+            )
+        )
+        return
+
+    if command == "create-playlist":
+        print(
+            json.dumps(
+                create_playlist(
+                    str(payload.get("authPath", "")),
+                    str(payload.get("title", "")),
+                    str(payload.get("description", "")),
+                    str(payload.get("privacyStatus", "PRIVATE")),
+                    payload.get("videoIds", []),
+                )
+            )
+        )
+        return
+
+    raise SystemExit(
+        "Usage: python src/main.py match|auth-status|auth-setup|create-playlist"
     )
-    print(json.dumps(matches))
 
 
 if __name__ == "__main__":

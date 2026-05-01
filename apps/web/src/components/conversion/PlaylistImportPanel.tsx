@@ -1,19 +1,23 @@
 import type { ConversionJob } from "@spottoyt/shared";
 import { Badge } from "@spottoyt/ui/components/badge";
 import { Button } from "@spottoyt/ui/components/button";
-import { ListMusic, MousePointerClick, RefreshCw, Search } from "lucide-react";
+import { ExternalLink, ListMusic, MousePointerClick, Plus, RefreshCw, Search } from "lucide-react";
 
 type PlaylistImportPanelProps = {
   latestConversion?: ConversionJob | null;
   matching?: boolean;
+  creating?: boolean;
   onMatch?: () => void;
+  onCreate?: () => void;
   onReset?: () => void;
   resetting?: boolean;
 };
 
 export function PlaylistImportPanel({
   latestConversion,
+  creating = false,
   matching = false,
+  onCreate,
   onMatch,
   onReset,
   resetting = false,
@@ -52,8 +56,26 @@ export function PlaylistImportPanel({
                 {matching ? "Matching with YTMusic" : "Match with YTMusic"}
               </Button>
             ) : null}
+            {latestConversion.status === "reviewing" ? (
+              <Button disabled={creating} onClick={onCreate} type="button">
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                {creating ? "Creating playlist" : "Create playlist"}
+              </Button>
+            ) : null}
+            {latestConversion.playlist ? (
+              <Button asChild type="button" variant="secondary">
+                <a
+                  href={latestConversion.playlist.playlistUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <ExternalLink data-icon="inline-start" aria-hidden="true" />
+                  Open YouTube Music playlist
+                </a>
+              </Button>
+            ) : null}
             <Button
-              disabled={matching || resetting}
+              disabled={matching || creating || resetting}
               onClick={onReset}
               type="button"
               variant="secondary"

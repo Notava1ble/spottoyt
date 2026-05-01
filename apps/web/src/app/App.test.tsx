@@ -65,6 +65,22 @@ function mockApi({
         );
       }
 
+      if (
+        method === "POST" &&
+        url.endsWith("/auth/youtube-music/browser-headers")
+      ) {
+        return new Response(
+          JSON.stringify({
+            youtubeMusic: {
+              provider: "youtubeMusic",
+              connected: true,
+              configured: true,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
       if (url.endsWith("/imports/latest")) {
         const conversion = await Promise.resolve(
           typeof latestConversion === "function"
@@ -104,6 +120,30 @@ function mockApi({
           }),
           { status: 200 },
         );
+      }
+
+      if (method === "POST" && url.match(/\/conversions\/.+\/create$/)) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+
+        if (conversion && typeof conversion === "object") {
+          const nextConversion = {
+            ...structuredClone(conversion),
+            status: "complete",
+            playlist: {
+              playlistId: "PLroadtrip",
+              playlistUrl:
+                "https://music.youtube.com/playlist?list=PLroadtrip",
+              createdTrackCount: 2,
+              skippedTrackCount: 0,
+            },
+          };
+          latestConversion = nextConversion;
+
+          return new Response(JSON.stringify(nextConversion), { status: 200 });
+        }
       }
 
       if (
@@ -361,6 +401,35 @@ describe("app shell", () => {
     );
   });
 
+  it("connects YouTube Music with pasted browser headers in settings", async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockApi();
+
+    render(<App initialEntries={["/settings"]} />);
+
+    await user.click(await screen.findByRole("button", { name: /connect youtube music/i }));
+    await user.type(
+      screen.getByLabelText(/request headers/i),
+      "accept: */*\ncookie: secret",
+    );
+    await user.click(screen.getByRole("button", { name: /save connection/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url.toString().endsWith("/auth/youtube-music/browser-headers") &&
+            init?.method === "POST" &&
+            init.body?.toString().includes("cookie: secret")
+          );
+        }),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Connected")).toBeInTheDocument();
+  });
+
   it("starts from the Spicetify import surface in convert", async () => {
     mockApi();
 
@@ -595,5 +664,32 @@ describe("app shell", () => {
     expect(
       await screen.findByText("M83 - Midnight City (Official Video)"),
     ).toBeInTheDocument();
+  });
+
+  it("creates a YouTube Music playlist after review", async () => {
+    const user = userEvent.setup();
+    const conversion = matchedConversion();
+    const fetchMock = mockApi({
+      latestConversion: conversion,
+      matchedConversion: conversion,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await user.click(await screen.findByRole("button", { name: /create playlist/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          call[0].toString().endsWith("/conversions/conversion-spicetify-playlist-1/create"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      await screen.findByRole("link", { name: /open youtube music playlist/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://music.youtube.com/playlist?list=PLroadtrip",
+    );
   });
 });

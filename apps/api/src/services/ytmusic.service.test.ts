@@ -5,6 +5,7 @@ import {
   getDefaultPythonCommand,
   YtmusicService,
   YtmusicWorkerUnavailableError,
+  type YtmusicPlaylistCreateClient,
   type YtmusicSearchClient,
 } from "./ytmusic.service";
 
@@ -26,6 +27,31 @@ class FakeSearchClient implements YtmusicSearchClient {
 
   async findCandidatesForTracks() {
     return this.results;
+  }
+}
+
+class FakePlaylistClient implements YtmusicPlaylistCreateClient {
+  received:
+    | {
+        description: string;
+        privacyStatus: "PRIVATE";
+        title: string;
+        videoIds: string[];
+      }
+    | undefined;
+
+  async createPlaylist(input: {
+    description: string;
+    privacyStatus: "PRIVATE";
+    title: string;
+    videoIds: string[];
+  }) {
+    this.received = input;
+
+    return {
+      playlistId: "PL123",
+      playlistUrl: "https://music.youtube.com/playlist?list=PL123",
+    };
   }
 }
 
@@ -254,6 +280,33 @@ describe("YtmusicService", () => {
     await expect(service.findMatchesForTracks([baseTrack])).rejects.toThrow(
       YtmusicWorkerUnavailableError,
     );
+  });
+
+  it("should create a private playlist through the YouTube Music playlist client", async () => {
+    const playlistClient = new FakePlaylistClient();
+    const service = new YtmusicService(
+      new FakeSearchClient([]),
+      undefined,
+      undefined,
+      playlistClient,
+    );
+
+    const playlist = await service.createPlaylist({
+      description: "Converted from Spotify by SpottoYT.",
+      title: "Road trip - YouTube Music",
+      videoIds: ["song-1", "song-2"],
+    });
+
+    expect(playlist).toEqual({
+      playlistId: "PL123",
+      playlistUrl: "https://music.youtube.com/playlist?list=PL123",
+    });
+    expect(playlistClient.received).toEqual({
+      description: "Converted from Spotify by SpottoYT.",
+      privacyStatus: "PRIVATE",
+      title: "Road trip - YouTube Music",
+      videoIds: ["song-1", "song-2"],
+    });
   });
 
   it("should prefer the worker-local uv virtual environment python", () => {
