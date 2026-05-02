@@ -1162,6 +1162,79 @@ describe("api shell", () => {
     await app.close();
   });
 
+  it("persists a manually pasted YouTube Music watch link", async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        ytmusicSearchClient: {
+          async findCandidatesForTracks() {
+            return [
+              {
+                trackId: "spotify:track:midnight-city",
+                candidates: [],
+              },
+            ];
+          },
+        },
+      },
+    );
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+    const selected = await app.inject({
+      method: "POST",
+      url: `/conversions/${imported.json().conversion.id}/matches/${encodeURIComponent("spotify:track:midnight-city")}/link`,
+      payload: {
+        url: "https://music.youtube.com/watch?v=dX3k_QDnzHE&si=abc123",
+      },
+    });
+
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().match).toEqual({
+      trackId: "spotify:track:midnight-city",
+      candidate: {
+        videoId: "dX3k_QDnzHE",
+        title: "Midnight City",
+        artists: ["M83"],
+        album: "Hurry Up, We're Dreaming",
+        durationMs: 243000,
+        resultType: "video",
+      },
+      confidence: 1,
+      status: "accepted",
+    });
+    expect(selected.json().summary.accepted).toBe(1);
+
+    await app.close();
+  });
+
+  it("lists locally stored conversions for the library", async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/imports/spicetify",
+      payload: spicetifySnapshot("Road trip", "Midnight City"),
+    });
+
+    const library = await app.inject({
+      method: "GET",
+      url: "/conversions",
+    });
+
+    expect(library.statusCode).toBe(200);
+    expect(library.json()).toEqual({
+      conversions: [imported.json().conversion],
+    });
+
+    await app.close();
+  });
+
   it("creates a YouTube Music playlist from accepted matches in track order", async () => {
     const playlistRequests: Array<{
       title: string;

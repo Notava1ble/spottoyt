@@ -137,12 +137,7 @@ describe("ConversionService storage", () => {
     const searchClient = new FakeSearchClient();
     const playlistClient = new RecordingPlaylistClient();
     const service = new ConversionService(
-      new YtmusicService(
-        searchClient,
-        undefined,
-        undefined,
-        playlistClient,
-      ),
+      new YtmusicService(searchClient, undefined, undefined, playlistClient),
       undefined,
       undefined,
       new FileConversionStore(storePath),
@@ -192,6 +187,74 @@ describe("ConversionService storage", () => {
         videoIds: ["ytm-outro"],
       },
     ]);
+  });
+
+  it("should list stored conversions with the most recently updated first", async () => {
+    const storePath = createStorePath();
+    const service = new ConversionService(
+      new YtmusicService(
+        new FakeSearchClient(),
+        undefined,
+        undefined,
+        new RecordingPlaylistClient(),
+      ),
+      undefined,
+      undefined,
+      new FileConversionStore(storePath),
+    );
+
+    const older = service.importSpicetifySnapshot(
+      snapshotWithTracks(["Midnight City"]),
+    );
+    await service.matchConversion(older.id);
+    const completed = await service.createPlaylist(older.id, {
+      targetPlaylistName: "Road trip",
+    });
+    service.resetImport();
+    const newer = service.importSpicetifySnapshot({
+      ...snapshotWithTracks(["Outro"]),
+      spotifyPlaylistUri: "spotify:playlist:night-drive",
+      playlistName: "Night drive",
+    });
+
+    const conversions = service.listConversions();
+
+    expect(conversions.map((conversion) => conversion.id)).toEqual([
+      newer.id,
+      completed.id,
+    ]);
+  });
+
+  it("should accept a manual YouTube Music watch link as the selected match", () => {
+    const service = new ConversionService(
+      new YtmusicService(new FakeSearchClient()),
+      undefined,
+      undefined,
+      new FileConversionStore(createStorePath()),
+    );
+    const imported = service.importSpicetifySnapshot(
+      snapshotWithTracks(["Midnight City"]),
+    );
+
+    const selected = service.selectManualMatchFromUrl(
+      imported.id,
+      "spotify:track:midnight-city",
+      "https://music.youtube.com/watch?v=dX3k_QDnzHE&si=abc123",
+    );
+
+    expect(selected.match).toEqual({
+      trackId: "spotify:track:midnight-city",
+      candidate: {
+        videoId: "dX3k_QDnzHE",
+        title: "Midnight City",
+        artists: ["M83"],
+        album: "Hurry Up, We're Dreaming",
+        durationMs: 243000,
+        resultType: "video",
+      },
+      confidence: 1,
+      status: "accepted",
+    });
   });
 });
 

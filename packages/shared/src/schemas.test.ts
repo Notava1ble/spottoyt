@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   accountStatusResponseSchema,
   conversionJobSchema,
+  conversionLibraryResponseSchema,
+  manualMatchLinkRequestSchema,
   manualMatchSearchRequestSchema,
   manualMatchSelectRequestSchema,
   mockConversionJob,
@@ -112,5 +114,21 @@ describe("shared schemas", () => {
 
     expect(search.query).toBe("Midnight City M83");
     expect(selection.candidate.videoId).toBe("ytm-midnight-city");
+  });
+
+  it("parses manual match link requests", () => {
+    const parsed = manualMatchLinkRequestSchema.parse({
+      url: "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
+
+    expect(parsed.url).toBe("https://music.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  it("parses conversion library responses", () => {
+    const parsed = conversionLibraryResponseSchema.parse({
+      conversions: [mockConversionJob],
+    });
+
+    expect(parsed.conversions[0]?.id).toBe(mockConversionJob.id);
   });
 });

@@ -58,6 +58,9 @@ export function SettingsPage() {
   const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [headersRaw, setHeadersRaw] = useState("");
+  const [matchingErrorMessage, setMatchingErrorMessage] = useState<
+    string | null
+  >(null);
   const saveMatchingSettings = useMutation({
     mutationFn: () =>
       updateMatchingSettings({
@@ -66,9 +69,20 @@ export function SettingsPage() {
         reviewThreshold: percentToRatio(draft.reviewThreshold),
         searchLimit: Number(draft.searchLimit),
       }),
+    onMutate: () => {
+      setMatchingErrorMessage(null);
+    },
     onSuccess: (response) => {
       queryClient.setQueryData(["matching-settings"], response);
       setDraft(toDraft(response.settings));
+      setMatchingErrorMessage(null);
+    },
+    onError: (error) => {
+      setMatchingErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Matching settings could not be saved.",
+      );
     },
   });
   const saveYoutubeMusicAuth = useMutation({
@@ -336,14 +350,22 @@ export function SettingsPage() {
               </label>
             </CardContent>
             <CardFooter className="justify-between">
-              <span className="text-muted-foreground text-sm">
-                {saveMatchingSettings.isSuccess
-                  ? "Saved"
-                  : "Server-side settings"}
-              </span>
+              <div className="min-w-0">
+                <span className="text-muted-foreground text-sm">
+                  {saveMatchingSettings.isSuccess
+                    ? "Saved"
+                    : "Server-side settings"}
+                </span>
+                {matchingErrorMessage ? (
+                  <p className="mt-1 text-destructive text-sm" role="alert">
+                    {matchingErrorMessage}
+                  </p>
+                ) : null}
+              </div>
               <Button
                 disabled={saveMatchingSettings.isPending}
                 onClick={() => saveMatchingSettings.mutate()}
+                type="button"
               >
                 Save matching settings
               </Button>

@@ -14,6 +14,7 @@ export type ConversionStore = {
   getBySpotifyPlaylistUri(spotifyPlaylistUri: string): ConversionJob | null;
   getConversion(id: string): ConversionJob | null;
   getLatestImport(): ConversionJob | null;
+  listConversions(): ConversionJob[];
   saveConversion(conversion: ConversionJob): ConversionJob;
 };
 
@@ -54,6 +55,10 @@ export class FileConversionStore implements ConversionStore {
     }
 
     return data.conversions[data.latestConversionId] ?? null;
+  }
+
+  listConversions() {
+    return Object.values(this.read().conversions);
   }
 
   saveConversion(conversion: ConversionJob) {

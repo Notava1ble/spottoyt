@@ -2,7 +2,9 @@ import type {
   AccountStatusResponse,
   BrowserHeadersAuthRequest,
   ConversionJob,
+  ConversionLibraryResponse,
   LatestImportResponse,
+  ManualMatchLinkRequest,
   ManualMatchSearchResponse,
   MatchDecision,
   MatchDecisionStatus,
@@ -128,6 +130,10 @@ export function getLatestImport() {
   return apiGet<LatestImportResponse>("/imports/latest");
 }
 
+export function getConversionLibrary() {
+  return apiGet<ConversionLibraryResponse>("/conversions");
+}
+
 export function getEventsUrl() {
   return `${apiUrl}/events`;
 }
@@ -228,6 +234,26 @@ export function selectManualTrackMatch(
   }>(
     `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/manual`,
     { candidate },
+  );
+}
+
+export function selectManualTrackMatchFromLink(
+  conversionId: string,
+  trackId: string,
+  request: ManualMatchLinkRequest,
+) {
+  return apiPostJson<{
+    conversion: ConversionJob;
+    match: MatchDecision;
+    summary: {
+      accepted: number;
+      review: number;
+      skipped: number;
+      total: number;
+    };
+  }>(
+    `/conversions/${conversionId}/matches/${encodeURIComponent(trackId)}/link`,
+    request,
   );
 }
 

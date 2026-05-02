@@ -108,6 +108,21 @@ export class ConversionService {
     return this.latestImport ?? null;
   }
 
+  listConversions(): ConversionJob[] {
+    const conversions =
+      this.store?.listConversions() ??
+      (this.latestImport ? [this.latestImport] : []);
+
+    return conversionJobSchema
+      .array()
+      .parse(
+        [...conversions].sort(
+          (left, right) =>
+            Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+        ),
+      );
+  }
+
   resetImport() {
     this.logEvent("info", "api", "import.reset", {
       conversionId: this.latestImport?.id,
@@ -328,6 +343,32 @@ export class ConversionService {
     return this.replaceMatch(conversion, match);
   }
 
+  selectManualMatchFromUrl(id: string, trackId: string, url: string) {
+    const conversion = this.requireLatestConversion(id);
+    const track = conversion.tracks.find((item) => item.id === trackId);
+
+    if (!track) {
+      throw new TrackNotFoundError();
+    }
+
+    const videoId = parseYoutubeVideoId(url);
+    const match = matchDecisionSchema.parse({
+      trackId,
+      candidate: {
+        videoId,
+        title: track.title,
+        artists: track.artists,
+        album: track.album,
+        durationMs: track.durationMs,
+        resultType: "video",
+      },
+      confidence: 1,
+      status: "accepted",
+    });
+
+    return this.replaceMatch(conversion, match);
+  }
+
   async searchTrackMatch(id: string, trackId: string) {
     const conversion = this.requireLatestConversion(id);
     const track = conversion.tracks.find((item) => item.id === trackId);
@@ -446,7 +487,9 @@ export class ConversionService {
     const conversion =
       this.latestImport?.id === id
         ? this.latestImport
-        : this.normalizeRestoredConversion(this.store?.getConversion(id) ?? null);
+        : this.normalizeRestoredConversion(
+            this.store?.getConversion(id) ?? null,
+          );
 
     if (!conversion) {
       this.logEvent("warn", "api", "conversion.not_found", {
@@ -574,6 +617,12 @@ export class InvalidMatchDecisionError extends Error {
   }
 }
 
+export class InvalidManualMatchLinkError extends Error {
+  constructor() {
+    super("Expected a YouTube Music or YouTube watch link.");
+  }
+}
+
 export class InvalidConversionStateError extends Error {
   constructor() {
     super("Conversion must be ready for review before creating a playlist");
@@ -627,4 +676,38 @@ function playlistIdFromUri(uri: string) {
 
 function slugifyId(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "-") || "spicetify";
+}
+
+function parseYoutubeVideoId(value: string) {
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    throw new InvalidManualMatchLinkError();
+  }
+
+  const hostname = url.hostname.replace(/^www\./, "");
+  const videoId =
+    hostname === "youtu.be"
+      ? url.pathname.split("/").filter(Boolean)[0]
+      : ["youtube.com", "music.youtube.com"].includes(hostname)
+        ? (url.searchParams.get("v") ??
+          videoIdFromPath(url.pathname, "/shorts/") ??
+          videoIdFromPath(url.pathname, "/embed/"))
+        : null;
+
+  if (!videoId || !/^[\w-]{6,}$/.test(videoId)) {
+    throw new InvalidManualMatchLinkError();
+  }
+
+  return videoId;
+}
+
+function videoIdFromPath(pathname: string, prefix: string) {
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+
+  return pathname.slice(prefix.length).split("/")[0] || null;
 }

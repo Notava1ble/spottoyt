@@ -3,7 +3,9 @@ import {
   accountStatusResponseSchema,
   browserHeadersAuthRequestSchema,
   type ConversionJob,
+  conversionLibraryResponseSchema,
   latestImportResponseSchema,
+  manualMatchLinkRequestSchema,
   manualMatchSearchRequestSchema,
   manualMatchSearchResponseSchema,
   manualMatchSelectRequestSchema,
@@ -26,8 +28,9 @@ import {
 import {
   ConversionNotFoundError,
   ConversionService,
-  InvalidConversionStateError,
   ImportLockedError,
+  InvalidConversionStateError,
+  InvalidManualMatchLinkError,
   InvalidMatchDecisionError,
   MatchNotFoundError,
   NoAcceptedMatchesError,
@@ -36,14 +39,14 @@ import {
 import { ImportEventsService } from "./services/import-events.service";
 import { MatchingSettingsService } from "./services/matching-settings.service";
 import {
+  type YtmusicAuthClient,
   type YtmusicSearchClient,
   YtmusicService,
-  type YtmusicAuthClient,
   YtmusicWorkerUnavailableError,
 } from "./services/ytmusic.service";
 import {
-  FileConversionStore,
   type ConversionStore,
+  FileConversionStore,
 } from "./storage/conversion-store";
 import { getDatabaseStatus } from "./storage/db";
 import { plannedTables } from "./storage/schema";
@@ -358,6 +361,12 @@ export function buildApp(
     }),
   );
 
+  app.get("/conversions", async () =>
+    conversionLibraryResponseSchema.parse({
+      conversions: conversions.listConversions(),
+    }),
+  );
+
   app.post<{ Body: SpicetifyImportBody }>("/imports/spicetify", {
     schema: {
       body: spicetifyImportBodySchema,
@@ -584,6 +593,37 @@ export function buildApp(
     },
   });
 
+  app.post<{
+    Body: unknown;
+    Params: { id: string; trackId: string };
+  }>("/conversions/:id/matches/:trackId/link", {
+    schema: {
+      params: matchParamsSchema,
+    },
+    handler: async (request, reply) => {
+      const parsed = manualMatchLinkRequestSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        reply.code(400);
+        return {
+          error: "Invalid manual match link",
+          message:
+            parsed.error.issues[0]?.message ?? "Expected a YouTube Music link.",
+        };
+      }
+
+      try {
+        return conversions.selectManualMatchFromUrl(
+          request.params.id,
+          request.params.trackId,
+          parsed.data.url,
+        );
+      } catch (error) {
+        return handleConversionError(error, reply);
+      }
+    },
+  });
+
   app.post<{ Params: { id: string; trackId: string } }>(
     "/conversions/:id/matches/:trackId/search",
     {
@@ -661,6 +701,11 @@ function handleConversionError(
   if (error instanceof InvalidMatchDecisionError) {
     reply.code(409);
     return { error: "Invalid match decision", message: error.message };
+  }
+
+  if (error instanceof InvalidManualMatchLinkError) {
+    reply.code(400);
+    return { error: "Invalid manual match link", message: error.message };
   }
 
   if (error instanceof InvalidConversionStateError) {

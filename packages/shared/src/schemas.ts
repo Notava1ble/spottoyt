@@ -92,6 +92,10 @@ export const manualMatchSearchRequestSchema = z.object({
   query: z.string().trim().min(1),
 });
 
+export const manualMatchLinkRequestSchema = z.object({
+  url: z.string().trim().url(),
+});
+
 export const manualMatchSearchResponseSchema = z.object({
   trackId: z.string(),
   query: z.string(),
@@ -143,6 +147,10 @@ export const conversionJobSchema = z.object({
   tracks: z.array(spotifyTrackSchema),
   matches: z.array(matchDecisionSchema),
   playlist: playlistCreationResultSchema.optional(),
+});
+
+export const conversionLibraryResponseSchema = z.object({
+  conversions: z.array(conversionJobSchema),
 });
 
 export const latestImportResponseSchema = z.object({

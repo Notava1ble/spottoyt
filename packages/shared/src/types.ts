@@ -4,8 +4,10 @@ import type {
   browserHeadersAuthRequestSchema,
   connectionStatusSchema,
   conversionJobSchema,
+  conversionLibraryResponseSchema,
   importEventSchema,
   latestImportResponseSchema,
+  manualMatchLinkRequestSchema,
   manualMatchSearchRequestSchema,
   manualMatchSearchResponseSchema,
   manualMatchSelectRequestSchema,
@@ -48,6 +50,9 @@ export type MatchDecisionUpdateRequest = z.infer<
 export type ManualMatchSearchRequest = z.infer<
   typeof manualMatchSearchRequestSchema
 >;
+export type ManualMatchLinkRequest = z.infer<
+  typeof manualMatchLinkRequestSchema
+>;
 export type ManualMatchSearchResponse = z.infer<
   typeof manualMatchSearchResponseSchema
 >;
@@ -60,6 +65,9 @@ export type MatchingSettingsResponse = z.infer<
   typeof matchingSettingsResponseSchema
 >;
 export type ConversionJob = z.infer<typeof conversionJobSchema>;
+export type ConversionLibraryResponse = z.infer<
+  typeof conversionLibraryResponseSchema
+>;
 export type LatestImportResponse = z.infer<typeof latestImportResponseSchema>;
 export type SpicetifyImportResponse = z.infer<
   typeof spicetifyImportResponseSchema

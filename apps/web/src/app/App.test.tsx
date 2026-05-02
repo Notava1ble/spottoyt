@@ -26,6 +26,7 @@ class MockEventSource {
 
 function mockApi({
   createError = null,
+  libraryConversions = [],
   latestConversion = null,
   manualCandidates = [
     {
@@ -37,10 +38,11 @@ function mockApi({
     },
   ],
   matchedConversion = null,
+  matchingSettingsPatchError = null,
   matchingSettings = {
-    autoAcceptThreshold: 0.86,
+    autoAcceptThreshold: 0.9,
     reviewThreshold: 0.62,
-    searchLimit: 10,
+    searchLimit: 20,
     includeVideos: true,
   },
   youtubeMusicSetupStatus = {
@@ -58,9 +60,14 @@ function mockApi({
     body: { error: string; message: string };
     status: number;
   } | null;
+  libraryConversions?: unknown[] | (() => MaybePromise<unknown[]>);
   latestConversion?: unknown | (() => MaybePromise<unknown>);
   manualCandidates?: unknown[];
   matchedConversion?: unknown | (() => MaybePromise<unknown>);
+  matchingSettingsPatchError?: {
+    body: { error: string; message: string };
+    status: number;
+  } | null;
   matchingSettings?: {
     autoAcceptThreshold: number;
     reviewThreshold: number;
@@ -139,6 +146,15 @@ function mockApi({
 
       if (url.endsWith("/settings/matching")) {
         if (method === "PATCH") {
+          if (matchingSettingsPatchError) {
+            return new Response(
+              JSON.stringify(matchingSettingsPatchError.body),
+              {
+                status: matchingSettingsPatchError.status,
+              },
+            );
+          }
+
           const patch = init?.body
             ? (JSON.parse(init.body.toString()) as Partial<
                 typeof matchingSettings
@@ -150,6 +166,16 @@ function mockApi({
         return new Response(JSON.stringify({ settings: matchingSettings }), {
           status: 200,
         });
+      }
+
+      if (method === "GET" && url.endsWith("/conversions")) {
+        const conversions = await Promise.resolve(
+          typeof libraryConversions === "function"
+            ? libraryConversions()
+            : libraryConversions,
+        );
+
+        return new Response(JSON.stringify({ conversions }), { status: 200 });
       }
 
       if (method === "POST" && url.match(/\/conversions\/.+\/match$/)) {
@@ -270,6 +296,47 @@ function mockApi({
           const nextConversion = structuredClone(conversion);
           const firstMatch = nextConversion.matches[0];
           firstMatch.candidate = body.candidate;
+          firstMatch.confidence = 1;
+          firstMatch.status = "accepted";
+          latestConversion = nextConversion;
+
+          return new Response(
+            JSON.stringify({
+              conversion: nextConversion,
+              match: firstMatch,
+              summary: { accepted: 1, review: 1, skipped: 0, total: 2 },
+            }),
+            { status: 200 },
+          );
+        }
+      }
+
+      if (
+        method === "POST" &&
+        url.match(/\/conversions\/.+\/matches\/.+\/link$/)
+      ) {
+        const conversion =
+          typeof latestConversion === "function"
+            ? latestConversion()
+            : latestConversion;
+
+        if (
+          conversion &&
+          typeof conversion === "object" &&
+          "matches" in conversion &&
+          "tracks" in conversion
+        ) {
+          const nextConversion = structuredClone(conversion);
+          const firstMatch = nextConversion.matches[0];
+          const firstTrack = nextConversion.tracks[0];
+          firstMatch.candidate = {
+            videoId: "dX3k_QDnzHE",
+            title: firstTrack.title,
+            artists: firstTrack.artists,
+            album: firstTrack.album,
+            durationMs: firstTrack.durationMs,
+            resultType: "video",
+          };
           firstMatch.confidence = 1;
           firstMatch.status = "accepted";
           latestConversion = nextConversion;
@@ -538,6 +605,35 @@ describe("app shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows locally stored conversion history in the library", async () => {
+    const conversion = {
+      ...acceptedConversion(),
+      status: "complete",
+      updatedAt: "2026-05-01T10:15:00.000Z",
+      playlist: {
+        playlistId: "PLroadtrip",
+        playlistUrl: "https://music.youtube.com/playlist?list=PLroadtrip",
+        createdTrackCount: 2,
+        skippedTrackCount: 0,
+      },
+    };
+    mockApi({
+      libraryConversions: [conversion],
+    });
+
+    render(<App initialEntries={["/library"]} />);
+
+    expect(await screen.findByText("Road trip")).toBeInTheDocument();
+    expect(screen.getByText("2 tracks")).toBeInTheDocument();
+    expect(screen.getByText("2 accepted")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /open youtube music playlist/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://music.youtube.com/playlist?list=PLroadtrip",
+    );
+  });
+
   it("loads and saves matching settings in settings", async () => {
     const user = userEvent.setup();
     const fetchMock = mockApi();
@@ -549,9 +645,9 @@ describe("app shell", () => {
     const searchLimit = screen.getByLabelText(/search limit/i);
     const includeVideos = screen.getByLabelText(/include video results/i);
 
-    expect(autoAccept).toHaveValue(86);
+    expect(autoAccept).toHaveValue(90);
     expect(reviewFloor).toHaveValue(62);
-    expect(searchLimit).toHaveValue(10);
+    expect(searchLimit).toHaveValue(20);
     expect(includeVideos).toBeChecked();
 
     await user.clear(autoAccept);
@@ -577,6 +673,31 @@ describe("app shell", () => {
           );
         }),
       ).toBe(true),
+    );
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+  });
+
+  it("shows matching settings save errors in settings", async () => {
+    const user = userEvent.setup();
+    mockApi({
+      matchingSettingsPatchError: {
+        status: 400,
+        body: {
+          error: "Invalid matching settings",
+          message:
+            "Auto-accept threshold must be greater than review threshold.",
+        },
+      },
+    });
+
+    render(<App initialEntries={["/settings"]} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /save matching settings/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Auto-accept threshold must be greater than review threshold.",
     );
   });
 
@@ -624,7 +745,9 @@ describe("app shell", () => {
 
     render(<App initialEntries={["/settings"]} />);
 
-    await user.click(await screen.findByRole("button", { name: /disconnect/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /disconnect/i }),
+    );
 
     await waitFor(() =>
       expect(
@@ -1169,6 +1292,53 @@ describe("app shell", () => {
     expect(screen.getByLabelText(/playlist name/i)).toHaveValue(
       "Road trip manual verify",
     );
+  });
+
+  it("accepts a pasted YouTube Music link for a manual match", async () => {
+    const user = userEvent.setup();
+    const conversion = matchedConversion();
+    const fetchMock = mockApi({
+      latestConversion: conversion,
+      matchedConversion: conversion,
+    });
+
+    render(<App initialEntries={["/"]} />);
+
+    await screen.findByText(/matches ready for review/i);
+    const searchButton = screen
+      .getAllByRole("button", { name: /search replacement/i })
+      .at(0);
+
+    if (!searchButton) {
+      throw new Error("Expected a search replacement button.");
+    }
+
+    await user.click(searchButton);
+    await user.type(
+      await screen.findByLabelText(/youtube music link/i),
+      "https://music.youtube.com/watch?v=dX3k_QDnzHE&si=abc123",
+    );
+    await user.click(screen.getByRole("button", { name: /use link/i }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const [url, init] = call;
+
+          return (
+            url
+              .toString()
+              .includes("/matches/spotify%3Atrack%3Atrack-1/link") &&
+            init?.body?.toString().includes("dX3k_QDnzHE")
+          );
+        }),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByRole("dialog", {
+        name: /manual youtube music search/i,
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates a YouTube Music playlist after review", async () => {

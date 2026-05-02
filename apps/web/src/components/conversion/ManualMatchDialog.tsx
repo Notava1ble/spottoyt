@@ -14,11 +14,12 @@ import {
 } from "@spottoyt/ui/components/dialog";
 import { Input } from "@spottoyt/ui/components/input";
 import { useMutation } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Link, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   searchManualTrackCandidates,
   selectManualTrackMatch,
+  selectManualTrackMatchFromLink,
 } from "../../lib/apiClient";
 import { formatDuration } from "../../lib/formatters";
 import { logClientEvent } from "../../lib/logger";
@@ -46,6 +47,7 @@ export function ManualMatchDialog({
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<YtmusicCandidate[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [youtubeLink, setYoutubeLink] = useState("");
   const searchCandidates = useMutation({
     mutationFn: ({ query, trackId }: SearchRequest) =>
       searchManualTrackCandidates(conversionId, trackId, query),
@@ -87,6 +89,30 @@ export function ManualMatchDialog({
       });
     },
   });
+  const selectLink = useMutation({
+    mutationFn: (url: string) => {
+      if (!track) {
+        throw new Error("No track selected.");
+      }
+
+      return selectManualTrackMatchFromLink(conversionId, track.id, { url });
+    },
+    onSuccess: (response) => {
+      onConversionChange(response.conversion);
+      onOpenChange(false);
+      setErrorMessage(null);
+      setYoutubeLink("");
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMessage("Link selection failed.");
+      logClientEvent("error", "web.manual_link_select.failed", {
+        conversionId,
+        message,
+        trackId: track?.id,
+      });
+    },
+  });
 
   useEffect(() => {
     if (!open || !track) {
@@ -97,6 +123,7 @@ export function ManualMatchDialog({
     setQuery(nextQuery);
     setCandidates([]);
     setErrorMessage(null);
+    setYoutubeLink("");
     searchCandidates.mutate({ query: nextQuery, trackId: track.id });
   }, [open, track, searchCandidates.mutate]);
 
@@ -113,6 +140,20 @@ export function ManualMatchDialog({
       trackId: track.id,
     });
     searchCandidates.mutate({ query: nextQuery, trackId: track.id });
+  }
+
+  function handleUseLink() {
+    const nextLink = youtubeLink.trim();
+
+    if (!track || nextLink.length === 0) {
+      return;
+    }
+
+    logClientEvent("info", "web.manual_link_select.clicked", {
+      conversionId,
+      trackId: track.id,
+    });
+    selectLink.mutate(nextLink);
   }
 
   return (
@@ -160,6 +201,39 @@ export function ManualMatchDialog({
         {errorMessage ? (
           <p className="text-destructive text-sm">{errorMessage}</p>
         ) : null}
+        <form
+          className="flex flex-col gap-2 rounded-md border bg-background p-3 sm:flex-row sm:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleUseLink();
+          }}
+        >
+          <label className="grid flex-1 gap-1" htmlFor="manual-youtube-link">
+            <span className="font-medium text-foreground text-sm">
+              YouTube Music link
+            </span>
+            <Input
+              disabled={!track || selectLink.isPending}
+              id="manual-youtube-link"
+              onChange={(event) => setYoutubeLink(event.target.value)}
+              placeholder="https://music.youtube.com/watch?v=..."
+              value={youtubeLink}
+            />
+          </label>
+          <Button
+            disabled={
+              !track ||
+              youtubeLink.trim().length === 0 ||
+              selectCandidate.isPending ||
+              selectLink.isPending
+            }
+            type="submit"
+            variant="secondary"
+          >
+            <Link data-icon="inline-start" aria-hidden="true" />
+            {selectLink.isPending ? "Using link" : "Use link"}
+          </Button>
+        </form>
         <div className="max-h-80 overflow-y-auto rounded-md border">
           {candidates.length > 0 ? (
             candidates.map((candidate) => (
