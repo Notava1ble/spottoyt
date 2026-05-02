@@ -294,7 +294,7 @@ export class ConversionService {
       throw new TrackNotFoundError();
     }
 
-    const candidates = await this.ytmusic.searchCandidates(trimmedQuery);
+    const candidates = await this.ytmusic.searchCandidates(trimmedQuery, track);
 
     this.logEvent("info", "api", "conversion.manual_search.requested", {
       conversionId: conversion.id,

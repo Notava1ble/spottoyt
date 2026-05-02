@@ -49,4 +49,9 @@ describe("MatchingSettingsService", () => {
 
     expect(service.getSettings()).toEqual(defaultMatchingSettings);
   });
+
+  it("should default to stricter auto-acceptance and a broader search pool", () => {
+    expect(defaultMatchingSettings.autoAcceptThreshold).toBe(0.9);
+    expect(defaultMatchingSettings.searchLimit).toBe(20);
+  });
 });

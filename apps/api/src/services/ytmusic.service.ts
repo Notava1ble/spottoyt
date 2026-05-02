@@ -199,7 +199,10 @@ export class YtmusicService {
     return matchDecisionSchema.array().parse(matches);
   }
 
-  async searchCandidates(query: string): Promise<YtmusicCandidate[]> {
+  async searchCandidates(
+    query: string,
+    referenceTrack?: SpotifyTrack,
+  ): Promise<YtmusicCandidate[]> {
     const settings = this.matchingSettings.getSettings();
     const searchTrack: SpotifyTrack = {
       id: "manual-search",
@@ -222,7 +225,10 @@ export class YtmusicService {
       candidateCount: result?.candidates.length ?? 0,
     });
 
-    return result?.candidates ?? [];
+    return rankCandidates(
+      referenceTrack ?? searchTrack,
+      result?.candidates ?? [],
+    ).slice(0, settings.searchLimit);
   }
 
   async getAuthStatus() {
@@ -415,12 +421,7 @@ function decideMatch(
     };
   }
 
-  const scored = candidates
-    .map((candidate) => ({
-      candidate,
-      confidence: scoreCandidate(track, candidate),
-    }))
-    .sort((left, right) => right.confidence - left.confidence);
+  const scored = scoreCandidates(track, candidates);
   const best = scored[0];
   const second = scored[1];
 
@@ -443,6 +444,26 @@ function decideMatch(
         ? "accepted"
         : "review",
   };
+}
+
+function rankCandidates(
+  track: SpotifyTrack,
+  candidates: YtmusicCandidate[],
+): YtmusicCandidate[] {
+  return scoreCandidates(track, candidates).map(({ candidate }) => candidate);
+}
+
+function scoreCandidates(track: SpotifyTrack, candidates: YtmusicCandidate[]) {
+  return candidates
+    .map((candidate, index) => ({
+      candidate,
+      confidence: scoreCandidate(track, candidate),
+      index,
+    }))
+    .sort(
+      (left, right) =>
+        right.confidence - left.confidence || left.index - right.index,
+    );
 }
 
 function scoreCandidate(track: SpotifyTrack, candidate: YtmusicCandidate) {

@@ -248,6 +248,56 @@ class YtmusicWorkerTest(unittest.TestCase):
         self.assertTrue(any(call[1].get("filter") == "videos" for call in calls))
         youtube_dl.assert_not_called()
 
+    @patch("main.YTMusic")
+    @patch("main.YoutubeDL")
+    def test_match_tracks_keeps_video_candidates_when_song_results_fill_limit(
+        self, youtube_dl, ytmusic
+    ):
+        client = Mock()
+
+        def search(_query, **kwargs):
+            if kwargs.get("filter") == "songs":
+                return [
+                    {
+                        "videoId": f"random-song-{index}",
+                        "title": f"Random Song {index}",
+                        "artists": [{"name": "Other Artist"}],
+                        "duration_seconds": 180 + index,
+                        "resultType": "song",
+                    }
+                    for index in range(6)
+                ]
+
+            return [
+                {
+                    "videoId": "the-loneliest-video",
+                    "title": "Måneskin - THE LONELIEST (Official Video)",
+                    "artists": [{"name": "Måneskin"}],
+                    "duration_seconds": 247,
+                    "resultType": "video",
+                }
+            ]
+
+        client.search.side_effect = search
+        ytmusic.return_value = client
+
+        response = match_tracks(
+            [
+                {
+                    "id": "spotify:track:the-loneliest",
+                    "title": "THE LONELIEST",
+                    "artists": ["Måneskin"],
+                }
+            ],
+            limit=3,
+            include_videos=True,
+        )
+
+        self.assertIn(
+            "the-loneliest-video",
+            [candidate["videoId"] for candidate in response[0]["candidates"]],
+        )
+
     def test_build_search_queries_uses_official_video_queries_without_lyrics(self):
         queries = build_search_queries(
             "Love Me",
@@ -261,6 +311,20 @@ class YtmusicWorkerTest(unittest.TestCase):
         self.assertLess(
             queries.index(("Love Me Lil Wayne", "songs")),
             queries.index(("Love Me Lil Wayne official audio", "videos")),
+        )
+
+    def test_build_search_queries_includes_diacritic_folded_variants(self):
+        queries = build_search_queries(
+            "THE LONELIEST",
+            ["Måneskin"],
+            True,
+        )
+
+        self.assertIn(("THE LONELIEST Måneskin", "songs"), queries)
+        self.assertIn(("THE LONELIEST Maneskin", "songs"), queries)
+        self.assertIn(
+            ("THE LONELIEST Maneskin official video", "videos"),
+            queries,
         )
 
     @patch("main.YTMusic")

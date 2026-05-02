@@ -306,6 +306,47 @@ describe("YtmusicService", () => {
     });
   });
 
+  it("should rank manual search candidates against the Spotify track before result type", async () => {
+    const track = {
+      ...baseTrack,
+      id: "spotify:track:the-loneliest",
+      title: "THE LONELIEST",
+      artists: ["Måneskin"],
+      album: "Rush!",
+      durationMs: 247000,
+    } satisfies SpotifyTrack;
+    const service = new YtmusicService(
+      new FakeSearchClient([
+        {
+          trackId: "manual-search",
+          candidates: [
+            {
+              videoId: "random-song",
+              title: "Lonely Night",
+              artists: ["Other Artist"],
+              durationMs: 247000,
+              resultType: "song",
+            },
+            {
+              videoId: "the-loneliest-video",
+              title: "Måneskin - THE LONELIEST (Official Video)",
+              artists: ["Måneskin"],
+              durationMs: 247000,
+              resultType: "video",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const candidates = await service.searchCandidates(
+      "THE LONELIEST Maneskin",
+      track,
+    );
+
+    expect(candidates[0]?.videoId).toBe("the-loneliest-video");
+  });
+
   it("should send medium-confidence matches to review", async () => {
     const service = new YtmusicService(
       new FakeSearchClient([

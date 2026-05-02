@@ -7,9 +7,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 export const defaultMatchingSettings = {
-  autoAcceptThreshold: 0.86,
+  autoAcceptThreshold: 0.9,
   reviewThreshold: 0.62,
-  searchLimit: 10,
+  searchLimit: 20,
   includeVideos: true,
 } satisfies MatchingSettings;
 

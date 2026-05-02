@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import time
+import unicodedata
 from typing import Any
 
 try:
@@ -107,7 +108,7 @@ def match_tracks(
                 seen_video_ids.add(normalized["videoId"])
                 candidates.append(normalized)
 
-                if len(candidates) >= limit:
+                if len(candidates) - before_count >= query_limit:
                     break
 
             log_event(
@@ -118,9 +119,6 @@ def match_tracks(
                 rawResults=len(results),
                 candidateCount=len(candidates) - before_count,
             )
-
-            if len(candidates) >= limit:
-                break
 
         if not candidates and include_videos:
             fallback_query = " ".join(part for part in [title, primary_artist] if part)
@@ -278,10 +276,18 @@ def build_search_queries(
         " ".join(part for part in [title, primary_artist, "official audio"] if part),
         " ".join(part for part in [title, primary_artist, "official video"] if part),
     ]
-    queries = [(query, "songs") for query in song_queries]
+    queries = [
+        (query_variant, "songs")
+        for query in song_queries
+        for query_variant in search_query_variants(query)
+    ]
 
     if include_videos:
-        queries.extend((query, "videos") for query in video_queries)
+        queries.extend(
+            (query_variant, "videos")
+            for query in video_queries
+            for query_variant in search_query_variants(query)
+        )
 
     deduped_queries: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -299,6 +305,51 @@ def build_search_queries(
         deduped_queries.append(key)
 
     return deduped_queries
+
+
+SPECIAL_CHARACTER_FOLDS = str.maketrans(
+    {
+        "Æ": "AE",
+        "Ð": "D",
+        "Ø": "O",
+        "Þ": "TH",
+        "ß": "ss",
+        "æ": "ae",
+        "ð": "d",
+        "ø": "o",
+        "þ": "th",
+        "Ł": "L",
+        "ł": "l",
+        "Œ": "OE",
+        "œ": "oe",
+    }
+)
+
+
+def search_query_variants(query: str) -> list[str]:
+    compact_query = " ".join(query.split())
+    folded_query = fold_search_text(compact_query)
+    variants = [compact_query]
+
+    if folded_query and folded_query != compact_query:
+        variants.append(folded_query)
+
+    return variants
+
+
+def fold_search_text(value: str) -> str:
+    normalized = unicodedata.normalize(
+        "NFKD",
+        value.translate(SPECIAL_CHARACTER_FOLDS),
+    )
+
+    return " ".join(
+        "".join(
+            character
+            for character in normalized
+            if not unicodedata.combining(character)
+        ).split()
+    )
 
 
 def normalize_artists(artists: Any) -> list[str]:
